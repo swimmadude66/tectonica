@@ -1,4 +1,4 @@
-import { BehaviorSubject, Observable, debounceTime, map, combineLatest,skip, Subscription } from './libs/rxjs';
+import { BehaviorSubject, Observable, debounceTime, map, combineLatest,skip, Subscription } from '../libs/rxjs';
 
 interface StateStoreOpts {
 
@@ -152,13 +152,15 @@ export class StateStore<Base extends {[key: string | number | symbol]: any}> imp
       try {
         sub?.complete()
       } catch (e) {
-        console.error('Subject could not be cleaned up', e)
+        // do nothing
       }
     }
     this._data.clear()
     this._innerSubscriptions.forEach((sub) => {
       try {
-        sub.unsubscribe()
+        if (!sub.closed) {
+          sub.unsubscribe()
+        }
       } catch (e) {
         // do nothing
       }

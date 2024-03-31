@@ -1,17 +1,21 @@
 {
   "name": "tectonica",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "foundational utils and structures for the modern world",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
+    "build": "tsc",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "swimmadude66",
   "license": "MIT",
   "dependencies": {
-    "react": "^18.2.0",
-    "rxjs": "^7.8.1"
+    "rxjs": "7.8.1"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@types/node": "20.12.2",
+    "typescript": "5.4.3",
+    "ts-node": "10.9.2"
+  }
 }

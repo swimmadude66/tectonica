@@ -1,4 +1,4 @@
-import { StateStore } from '../src/store';
+import { StateStore } from '../src/core/store';
 import { delay } from '../src/libs/utils';
 
 interface ExampleStore {

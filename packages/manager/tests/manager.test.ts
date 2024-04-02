@@ -65,7 +65,7 @@ describe('AbstractManager', () => {
       lastData = data
     }
 
-    function handleGlobalData(key: string, data: any) {
+    function handleGlobalData(key: typeof GlobalKey | string, data: any) {
       globalDataCount++
       lastGlobalData = data
     }

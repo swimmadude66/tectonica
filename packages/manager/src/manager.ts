@@ -1,5 +1,5 @@
 import { EventEmitter } from 'tseep'
-import { EventsDef } from './types'
+import { EventsDef, ManagerEventTypeKey } from './types'
 
 export const GlobalKey = Symbol.for('__GLOBALKEY')
 
@@ -33,6 +33,7 @@ export class AbstractManager<E extends EventsDef> {
   teardown() {
     this.initialized = false
     this._emitter.removeAllListeners()
+    this.filteredListenersMap.clear()
   }
 
   protected emit(eventName: keyof E, key: string | typeof GlobalKey, data?: Omit<Parameters<E[keyof E]>, 'key'>) {
@@ -45,19 +46,19 @@ export class AbstractManager<E extends EventsDef> {
     this._emitter.emit(eventName, ...eventArgs)
   }
 
-  on(eventName: keyof E, key: string | typeof GlobalKey, listener: E[keyof E]) {
+  on<EventName extends keyof E = keyof E>(eventName: EventName, key: ManagerEventTypeKey<E, EventName> | typeof GlobalKey, listener: E[EventName]) {
     if (key === GlobalKey) {
       return this.onGlobal(eventName, listener)
     }
-    const filteredListener = this.getFilteredListener(key, listener)
-    this._emitter.on(eventName, filteredListener as any)
+    const filteredListener = this.getFilteredListener<EventName>(key, listener)
+    this._emitter.on(eventName, filteredListener)
   }
 
-  onGlobal(eventName: keyof E, listener: E[keyof E]) {
+  onGlobal<EventName extends keyof E = keyof E>(eventName: EventName, listener: E[EventName]) {
     this._emitter.on(eventName, listener)
   }
 
-  off(eventName: keyof E, key: string | typeof GlobalKey, listener: E[keyof E]) {
+  off<EventName extends keyof E = keyof E>(eventName: EventName, key: ManagerEventTypeKey<E, EventName> | typeof GlobalKey, listener: E[EventName]) {
     if (key === GlobalKey) {
       return this.offGlobal(eventName, listener)
     }
@@ -72,11 +73,11 @@ export class AbstractManager<E extends EventsDef> {
     }
   }
 
-  offGlobal(eventName: keyof E, listener: E[keyof E]) {
+  offGlobal<EventName extends keyof E = keyof E>(eventName: EventName, listener: E[EventName]) {
     this._emitter.off(eventName, listener)
   }
 
-  private getFilteredListener(key: string, listener: E[keyof E]) {
+  private getFilteredListener<EventName extends keyof E = keyof E>(key: string, listener: E[EventName]) {
     let baseListenerMap = this.filteredListenersMap.get(listener)
     if (!baseListenerMap) {
       const keyMap = new Map<string, (...args: any[]) => void>()
@@ -93,7 +94,7 @@ export class AbstractManager<E extends EventsDef> {
       baseListenerMap.set(key, newFilter)
       filteredListener = newFilter
     }
-    return filteredListener
+    return filteredListener as E[EventName]
   }
 
   private log(type: 'log' | 'info' | 'error' | 'warn', ...messages: any[]): void {

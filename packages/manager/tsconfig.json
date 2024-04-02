@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "es6",
+    "jsx": "react-jsx",
+    "typeRoots": ["node_modules/@types/", "../../node_modules/@types/"],
+    "baseUrl": "src",
+    "esModuleInterop": true,
+    "outDir": "dist"
+  },
+  "include": ["src"]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "@tectonica/manager",
+  "version": "0.0.1",
+  "private": true,
+  "main": "dist/index.js",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build": "tsc",
+    "lint": "eslint src",
+    "test": "mocha -r tsx tests/**/*.test.ts"
+  },
+  "dependencies": {
+    "tseep": "1.2.1",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "18.2.73",
+    "eslint-plugin-react": "7.34.1",
+    "eslint-plugin-react-hooks": "4.6.0",
+    "rimraf": "5.0.5",
+    "typescript": "^5.3.3"
+  }
+}

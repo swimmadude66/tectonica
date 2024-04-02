@@ -1,2 +1,4 @@
-node_modules/
-dist/
+.vscode/
+**/.turbo
+**/dist/
+**/node_modules/

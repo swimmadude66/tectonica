@@ -1,0 +1,21 @@
+{
+  "name": "@tectonica/store",
+  "version": "0.0.1",
+  "private": true,
+  "main": "dist/index.js",
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build": "tsc",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "rimraf": "5.0.5",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "rxjs": "^7.8.1"
+  }
+}

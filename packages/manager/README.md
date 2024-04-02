@@ -60,14 +60,13 @@ _scrollManager/react.ts_
 
 ```typescript
 import { createGlobalValueListenerHook, createManagerHook, createProvider } from '@tectonica/manager'
-
 import { useEffect, useMemo } from 'react'
 import { ScrollManager } from './manager'
 
-export const ScrollManagerProvider = createProvider(ScrollManager, ({ element }: { element: HTMLElement }) => {
+export const ScrollManagerProvider = createProvider(ScrollManager, () => {
   const manager = useMemo(() => {
-    return new ScrollManager(element)
-  }, [element])
+    return new ScrollManager()
+  }, [])
 
   useEffect(() => {
     manager?.init()

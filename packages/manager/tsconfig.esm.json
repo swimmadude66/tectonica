@@ -4,7 +4,7 @@
     "target": "es6",
     "outDir": "dist/esm",
     "typeRoots": ["node_modules/@types/", "../../node_modules/@types/"],
-    "declaration": false,
+    "declarationDir": "dist/types/",
     "module": "NodeNext",
     "moduleResolution": "NodeNext"
   },

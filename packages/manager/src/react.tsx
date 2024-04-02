@@ -13,7 +13,6 @@ import {
   ManagerConstructorHook,
   ManagerConstructorHookProps,
   ManagerEventTypeName,
-  ManagerEventTypeData,
   UseManagerHook,
 } from './types'
 import { AbstractManager, GlobalKey } from './manager'
@@ -79,7 +78,7 @@ export function createValueListenerHook<
   eventName: EventName,
   getKey: GetKeyType<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ArgsType>,
   getValue: GetValueType<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ReturnType>,
-  getServerValue?: GetValueType<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ReturnType>
+  getServerValue: GetValueType<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ReturnType> = getValue
 ): (...args: ArgsType[]) => ReturnType {
   const keyGetter = (typeof getKey === 'function' ? getKey : (_mgr, ..._args) => getKey) as GetKeyFunc<
     InstanceType<typeof managerClass>,
@@ -110,7 +109,7 @@ export function createValueListenerHook<
 
     const subscribe = useCallback(
       (notifyReact: () => void) => {
-        const handler = (_data: ManagerEventTypeData<InferManagerEvents<InstanceType<typeof managerClass>>, EventName>) => {
+        const handler: EventHandler<InferManagerEvents<InstanceType<typeof managerClass>>, typeof eventName> = (_data) => {
           notifyReact()
         }
         manager?.on(eventName, key, handler)
@@ -127,7 +126,7 @@ export function createValueListenerHook<
     }, [manager, key])
 
     const getServerSnapshot = useCallback(() => {
-      return (serverValueGetter ?? valueGetter)({ manager, eventName, key, data: undefined })
+      return serverValueGetter({ manager, eventName, key, data: undefined })
     }, [manager, key])
 
     const value = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)

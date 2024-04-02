@@ -24,7 +24,7 @@ export type AbstractManagerProvider<Props extends Record<string, unknown> = Reco
 
 export type UseManagerHook<Manager extends AbstractManager<any>> = () => Manager | undefined
 
-export type InferManagerEvents<Manager> = Manager extends AbstractManager<infer EventsDef> ? EventsDef : never
+export type InferManagerEvents<Manager> = Manager extends AbstractManager<infer E> ? E : never
 
 export type ManagerEventTypeName<E extends EventsDef> = keyof E
 export type ManagerEventTypeKey<E extends EventsDef, EventName extends ManagerEventTypeName<E>> = Parameters<E[EventName]>[0]

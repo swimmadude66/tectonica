@@ -4,7 +4,7 @@
     "target": "es6",
     "typeRoots": ["node_modules/@types/", "../../node_modules/@types/"],
     "outDir": "dist/cjs",
-    "declarationDir": "dist/types/"
+    "declaration": false
   },
   "include": ["src/"]
 }

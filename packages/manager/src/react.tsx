@@ -1,4 +1,4 @@
-import React, { Context, createContext, useCallback, useContext, useLayoutEffect, useSyncExternalStore, type PropsWithChildren } from 'react'
+import React, { Context, createContext, useCallback, useContext, useEffect, useLayoutEffect, useSyncExternalStore, type PropsWithChildren } from 'react'
 
 import {
   AbstractManagerClass,
@@ -51,6 +51,14 @@ export function createProvider<ManagerClass extends AbstractManagerClass<any>, P
 
   return function Provider(props: PropsWithChildren<Props>): JSX.Element {
     const manager: InstanceType<typeof managerClass> = useConstructor(props)
+
+    useEffect(() => {
+      manager?.init()
+
+      return () => {
+        manager?.teardown()
+      }
+    }, [manager])
 
     return <ManagerContext.Provider value={manager}>{props.children}</ManagerContext.Provider>
   }

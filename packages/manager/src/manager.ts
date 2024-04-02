@@ -24,24 +24,28 @@ export class AbstractManager<E extends EventsDef> {
   }
 
   init() {
-    this.initialized = true
-    if (!this.silent) {
-      this.log('info', `Initialized`)
+    if (!this.initialized) {
+      this.initialized = true
+      if (!this.silent) {
+        this.log('info', `Initialized`)
+      }
     }
   }
 
   teardown() {
-    this.initialized = false
-    this._emitter.removeAllListeners()
-    this.filteredListenersMap.clear()
+    if (this.initialized) {
+      this.initialized = false
+      this._emitter.removeAllListeners()
+      this.filteredListenersMap.clear()
+    }
   }
 
-  protected emit(eventName: keyof E, key: string | typeof GlobalKey, data?: Omit<Parameters<E[keyof E]>, 'key'>) {
+  protected emit(eventName: keyof E, key: string | typeof GlobalKey, data?: Parameters<E[keyof E]>[1]) {
     const eventArgs = [key, data] as any as Parameters<E[keyof E]>
     this._emitter.emit(eventName, ...eventArgs)
   }
 
-  protected emitGlobal(eventName: keyof E, data?: Omit<Parameters<E[keyof E]>, 'key'>) {
+  protected emitGlobal(eventName: keyof E, data?: Parameters<E[keyof E]>[1]) {
     const eventArgs = [GlobalKey, data] as any as Parameters<E[keyof E]>
     this._emitter.emit(eventName, ...eventArgs)
   }

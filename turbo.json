@@ -4,8 +4,15 @@
     "**/.env.*local"
   ],
   "pipeline": {
+    "prebuild": {
+      "dependsOn": [
+        "^prebuild"
+      ]
+    },
     "build": {
       "dependsOn": [
+        "^prebuild",
+        "prebuild",
         "^build"
       ]
     },

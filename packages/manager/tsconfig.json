@@ -4,9 +4,9 @@
     "target": "es6",
     "jsx": "react-jsx",
     "typeRoots": ["node_modules/@types/", "../../node_modules/@types/"],
-    "baseUrl": "src",
+    "baseUrl": "src/",
     "esModuleInterop": true,
-    "outDir": "dist"
+    "outDir": "dist/"
   },
-  "include": ["src"]
+  "include": ["src/"]
 }

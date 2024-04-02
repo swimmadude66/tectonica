@@ -1,7 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": [
-    "**/.env.*local"
+    "**/.env"
   ],
   "pipeline": {
     "prebuild": {
@@ -11,9 +11,11 @@
     },
     "build": {
       "dependsOn": [
-        "^prebuild",
         "prebuild",
         "^build"
+      ],
+      "outputs": [
+        "dist/"
       ]
     },
     "lint": {
@@ -30,6 +32,14 @@
     "dev": {
       "cache": false,
       "persistent": true
+    },
+    "publish-package": {
+      "dependsOn": [
+        "prebuild",
+        "lint",
+        "build"
+      ],
+      "cache": false
     }
   }
 }

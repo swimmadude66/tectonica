@@ -1,4 +1,4 @@
-import React, { Context, createContext, useCallback, useContext, useEffect, useLayoutEffect, useSyncExternalStore, type PropsWithChildren } from 'react'
+import { Context, createContext, useCallback, useContext, useEffect, useLayoutEffect, useSyncExternalStore, type PropsWithChildren } from 'react'
 
 import {
   AbstractManagerClass,

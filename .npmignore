@@ -1,0 +1,12 @@
+**/src/
+**/tests/
+**/node_modules/
+.vscode/
+.gitignore
+npm-debug.log
+**/tsconfig.*.json
+**/tsconfig.json
+.travis.yml
+.github/
+**/.turbo/
+**/.env

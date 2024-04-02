@@ -2,10 +2,11 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "target": "es6",
-    "jsx": "react-jsx",
+    "outDir": "dist/esm",
     "typeRoots": ["node_modules/@types/", "../../node_modules/@types/"],
-    "esModuleInterop": true,
-    "outDir": "dist/"
+    "declaration": false,
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
   },
   "include": ["src/"]
 }

@@ -11,6 +11,7 @@
     "build": "tsc",
     "lint": "eslint src"
   },
+  "dependencies": {},
   "devDependencies": {
     "rimraf": "5.0.5",
     "typescript": "^5.3.3"

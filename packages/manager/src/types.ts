@@ -1,21 +1,27 @@
 import type { PropsWithChildren } from 'react'
-import { GlobalKey, type AbstractManager } from './manager'
+import type { AbstractManager } from './manager'
 
 export interface AbstractManagerClass<M extends AbstractManager<any>> {
   new (...args: any[]): M
 }
 
 export type BaseListener<DataType = any> = (key: string, data?: DataType) => void
-
 export type GlobalListener<DataType = any> = (key: typeof GlobalKey, data?: DataType) => void
-
-export type ManagerEventType = BaseListener | GlobalListener
+export type AbstractEventListener = BaseListener | GlobalListener
 
 export type EventsDef = {
-  [eventName: string]: ManagerEventType
+  [eventName: string]: AbstractEventListener
 }
 
-export type EventListener<E extends EventsDef> = (args: Parameters<E[keyof E]>, manager: AbstractManagerClass<AbstractManager<E>>, eventName: keyof E) => void
+export type AbstractManagerListener<E extends EventsDef, M extends AbstractManager<E>, EventName extends keyof E> = (
+  key: Parameters<E[EventName]>[0],
+  data: Parameters<E[EventName]>[1] | undefined,
+  manager: M
+) => void
+
+export type AbstractManagerEventMap<E extends EventsDef, M extends AbstractManager<E>> = {
+  [eventName in keyof E]: AbstractManagerListener<E, M, keyof E>
+}
 
 export type ManagerConstructorHookProps = Record<string, unknown>
 export type ManagerConstructorHook<Manager extends AbstractManager<any>, Props extends ManagerConstructorHookProps> = (rest: Props) => Manager
@@ -58,3 +64,5 @@ export type GetValueType<Manager extends AbstractManager<E>, E extends EventsDef
 export type EventHandler<E extends EventsDef, EventName extends ManagerEventTypeName<E>> = (data: ManagerEventTypeData<E, EventName>) => void
 
 export type EffectListener<Manager extends AbstractManager<E>, E extends EventsDef, EventName extends ManagerEventTypeName<E>> = (data: ListenerData<Manager, E, EventName>) => void
+
+export const GlobalKey = Symbol.for('__GLOBALKEY')

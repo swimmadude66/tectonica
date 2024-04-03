@@ -1,4 +1,5 @@
-import { AbstractManager, GlobalKey } from '../src/manager'
+import { AbstractManager } from '../src/manager'
+import { GlobalKey } from '../src/types'
 
 type ScrollData = {
   scrollX: number

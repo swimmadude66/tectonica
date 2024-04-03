@@ -9,13 +9,14 @@ import {
   GetKeyType,
   GetValueFunc,
   GetValueType,
+  GlobalKey,
   InferManagerEvents,
   ManagerConstructorHook,
   ManagerConstructorHookProps,
   ManagerEventTypeName,
   UseManagerHook,
 } from './types'
-import { AbstractManager, GlobalKey } from './manager'
+import { AbstractManager } from './manager'
 
 type ManagerContextMapType<Manager extends AbstractManager<any> = AbstractManager<any>> = Map<AbstractManagerClass<Manager>, Context<Manager | undefined>>
 

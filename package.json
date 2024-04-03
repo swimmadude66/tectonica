@@ -32,7 +32,7 @@
     "tsx": "4.7.1",
     "tslib": "2.6.2",
     "typescript": "5.4.3",
-    "turbo": "1.13.0"
+    "turbo": "1.13.2"
   },
   "packageManager": "pnpm@8.9.0",
   "engines": {

@@ -1,22 +1,21 @@
 {
   "name": "@tectonica/manager",
-  "version": "0.0.4",
-  "main": "dist/cjs/index.js",
-  "module": "dist/esm/index.js",
-  "types": "dist/types/index.d.ts",
+  "version": "0.0.5",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
   "files": [
     "dist/**"
   ],
   "scripts": {
     "prebuild": "rimraf dist",
-    "build": "concurrently 'tsc -p ./tsconfig.cjs.json' 'tsc -p ./tsconfig.esm.json'",
+    "build": "tsup",
     "lint": "eslint src",
     "test": "mocha -r tsx tests/**/*.test.ts",
     "publish-package": "pnpm publish --access public"
   },
   "dependencies": {
-    "tseep": "1.2.1",
-    "react": "^18.2.0"
+    "tseep": "1.2.1"
   },
   "devDependencies": {
     "@types/react": "18.2.73",
@@ -24,5 +23,8 @@
     "eslint-plugin-react-hooks": "4.6.0",
     "rimraf": "5.0.5",
     "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "react": "^18"
   }
 }

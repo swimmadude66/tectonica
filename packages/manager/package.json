@@ -1,9 +1,9 @@
 {
   "name": "@tectonica/manager",
-  "version": "0.0.5",
-  "main": "dist/index.js",
-  "module": "dist/index.mjs",
+  "version": "0.0.4-debug-esm",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
+  "type": "module",
   "files": [
     "dist/**"
   ],

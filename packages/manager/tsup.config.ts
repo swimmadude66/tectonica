@@ -1,16 +1,14 @@
 import { defineConfig } from 'tsup'
 
-module.exports = defineConfig({
-  bundle: true,
+export default defineConfig({
   cjsInterop: true,
   minify: true,
   replaceNodeEnv: true,
   dts: true,
-  sourcemap: false,
   clean: true,
   entry: ['src/index.ts'],
   outDir: 'dist',
-  tsconfig: 'tsconfig.json',
-  format: ['esm', 'cjs'],
-  external: ['react', 'react-dom'],
+  tsconfig: 'tsconfig.esm.json',
+  format: ['esm'],
+  external: ['react', 'react-render'],
 })

@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "es6",
+    "emitDecoratorMetadata": false,
+    "typeRoots": ["node_modules/@types/", "../../node_modules/@types/"],
+    "module": "ES6",
+    "moduleResolution": "Bundler"
+  },
+  "include": ["src/"]
+}

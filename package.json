@@ -10,7 +10,7 @@
     "lint": "turbo lint",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "test": "turbo test",
-    "publish-packages": "turbo publish-package"
+    "publish-packages": "turbo publish-package --"
   },
   "keywords": [],
   "author": "swimmadude66",

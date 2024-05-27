@@ -3,7 +3,7 @@ on:
   release:
     types: [released]
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,10 +17,9 @@ jobs:
         with:
           run_install: true
       - run: pnpm run test
-      - run: pnpm run build
 
   deploy:
-    needs: build
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -33,7 +32,7 @@ jobs:
         uses: pnpm/action-setup@v4.0.0
         with:
           run_install: true
-      - run: pnpm publish-packages
+      - run: pnpm publish-packages --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{secrets.npm_token}}
     

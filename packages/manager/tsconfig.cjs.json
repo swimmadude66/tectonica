@@ -4,10 +4,11 @@
     "target": "es6",
     "emitDecoratorMetadata": false,
     "typeRoots": ["node_modules/@types/", "../../node_modules/@types/"],
-    "declaration": false,
-    "module": "ES6",
-    "moduleResolution": "Bundler",
-    "outDir": "dist/esm"
+    "declaration": true,
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "outDir": "dist/cjs",
+    "declarationDir": "dist/types"
   },
   "include": ["src/"]
 }

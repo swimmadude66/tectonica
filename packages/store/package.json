@@ -2,7 +2,18 @@
   "name": "@tectonica/store",
   "version": "0.0.1",
   "private": true,
-  "main": "dist/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "main": "dist/esm/index.js",
+  "type": "module",
+  "exports": {
+    "./*": {
+      "import": "./dist/esm/*.js",
+      "require": "./dist/cjs/*.js",
+      "types": "./dist/types/*.d.ts",
+      "default": "./dist/esm/*.js"
+    }
+  },
   "files": [
     "dist/**"
   ],

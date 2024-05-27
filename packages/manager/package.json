@@ -1,15 +1,27 @@
 {
   "name": "@tectonica/manager",
-  "version": "0.0.4-debug-esm",
-  "module": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "type": "module",
+  "version": "0.0.4-debug-esm-5",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/esm/index.js"
+    }
+  },
   "files": [
     "dist/**"
   ],
   "scripts": {
     "prebuild": "rimraf dist",
-    "build": "tsup",
+    "build:lib": "tsup",
+    "build:types": "tsc -p tsconfig.cjs.json --emitDeclarationOnly --outDir dist/types",
+    "dev:lib": "tsup --watch",
+    "dev:types": "tsc -p tsconfig.cjs.json --emitDeclarationOnly --outDir dist/types --watch",
+    "build": "concurrently \"npm:build:*\"",
+    "dev": "concurrently \"npm:dev:*\"",
     "lint": "eslint src",
     "test": "mocha -r tsx tests/**/*.test.ts",
     "publish-package": "pnpm publish --access public"

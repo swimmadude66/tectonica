@@ -1,5 +1,6 @@
 import { expect } from 'chai'
-import { AbstractManager, GlobalKey } from '../src/manager'
+import { AbstractManager } from '../src/manager'
+import { GlobalKey } from '../src/types'
 
 type TestEvents = {
   empty: (key: string) => void

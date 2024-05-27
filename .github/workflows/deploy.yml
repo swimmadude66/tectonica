@@ -1,0 +1,39 @@
+name: deploy
+on:
+  release:
+    types: [released]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 20
+      - name: Setup pnpm
+        # You may pin to the exact commit or the version.
+        # uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2
+        uses: pnpm/action-setup@v4.0.0
+        with:
+          run_install: true
+      - run: pnpm run test
+      - run: pnpm run build
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 20
+      - name: Setup pnpm
+        # You may pin to the exact commit or the version.
+        # uses: pnpm/action-setup@fe02b34f77f8bc703788d5817da081398fad5dd2
+        uses: pnpm/action-setup@v4.0.0
+        with:
+          run_install: true
+      - run: pnpm publish-packages
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.npm_token}}
+    

@@ -11,3 +11,4 @@ npm-debug.log
 **/.turbo/
 **/.env
 **/examples/
+.github/

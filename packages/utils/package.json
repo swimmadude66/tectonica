@@ -1,14 +1,28 @@
 {
   "name": "@tectonica/utils",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
-  "main": "dist/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/esm/index.js"
+    }
+  },
   "files": [
     "dist/**"
   ],
   "scripts": {
     "prebuild": "rimraf dist",
-    "build": "tsc",
+    "build:lib": "tsup",
+    "build:types": "tsc -p tsconfig.cjs.json --emitDeclarationOnly --outDir dist/types",
+    "dev:lib": "tsup --watch",
+    "dev:types": "tsc -p tsconfig.cjs.json --emitDeclarationOnly --outDir dist/types --watch",
+    "build": "concurrently \"npm:build:*\"",
+    "dev": "concurrently \"npm:dev:*\"",
     "lint": "eslint src"
   },
   "dependencies": {},

@@ -3,7 +3,6 @@
   "private": true,
   "version": "0.0.1",
   "description": "foundational utils and structures for the modern world",
-  "main": "dist/index.js",
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",

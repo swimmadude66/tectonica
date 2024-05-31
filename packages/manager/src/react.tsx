@@ -15,6 +15,7 @@ import {
   ManagerConstructorHookProps,
   ManagerEventTypeName,
   UseManagerHook,
+  UseOptionalManagerHook,
 } from './types'
 import { AbstractManager } from './manager'
 
@@ -34,6 +35,19 @@ export function getManagerContext<ManagerClass extends AbstractManagerClass<any>
 }
 
 export function useManagerContext<ManagerClass extends AbstractManagerClass<AbstractManager<any>>>(
+  managerClass: ManagerClass,
+  Context: Context<InstanceType<typeof managerClass> | undefined> = getManagerContext(managerClass)
+): InstanceType<typeof managerClass> {
+  Context.displayName = managerClass.name
+
+  const ctx = useContext<InstanceType<typeof managerClass> | undefined>(Context)
+  if (ctx == null) {
+    throw new Error(`Missing context for ${managerClass.name}`)
+  }
+  return ctx
+}
+
+export function useOptionalManagerContext<ManagerClass extends AbstractManagerClass<AbstractManager<any>>>(
   managerClass: ManagerClass,
   Context: Context<InstanceType<typeof managerClass> | undefined> = getManagerContext(managerClass)
 ): InstanceType<typeof managerClass> | undefined {
@@ -66,7 +80,14 @@ export function createProvider<ManagerClass extends AbstractManagerClass<any>, P
 
 export function createManagerHook<ManagerClass extends AbstractManagerClass<AbstractManager<any>>>(managerClass: ManagerClass): UseManagerHook<InstanceType<typeof managerClass>> {
   const ManagerContext = getManagerContext(managerClass)
-  return (): InstanceType<typeof managerClass> | undefined => useManagerContext(managerClass, ManagerContext)
+  return (): InstanceType<typeof managerClass> => useManagerContext(managerClass, ManagerContext)
+}
+
+export function createOptionalManagerHook<ManagerClass extends AbstractManagerClass<AbstractManager<any>>>(
+  managerClass: ManagerClass
+): UseOptionalManagerHook<InstanceType<typeof managerClass>> {
+  const ManagerContext = getManagerContext(managerClass)
+  return (): InstanceType<typeof managerClass> | undefined => useOptionalManagerContext(managerClass, ManagerContext)
 }
 
 export function createValueListenerHook<

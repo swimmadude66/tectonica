@@ -28,7 +28,8 @@ export type ManagerConstructorHook<Manager extends AbstractManager<any>, Props e
 
 export type AbstractManagerProvider<Props extends Record<string, unknown> = Record<string, unknown>> = (props: PropsWithChildren<Props>) => JSX.Element
 
-export type UseManagerHook<Manager extends AbstractManager<any>> = () => Manager | undefined
+export type UseManagerHook<Manager extends AbstractManager<any>> = () => Manager
+export type UseOptionalManagerHook<Manager extends AbstractManager<any>> = () => Manager | undefined
 
 export type InferManagerEvents<Manager> = Manager extends AbstractManager<infer E> ? E : never
 

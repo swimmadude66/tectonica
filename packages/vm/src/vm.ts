@@ -10,11 +10,14 @@ import {
   newQuickJSAsyncWASMModuleFromVariant,
 } from 'quickjs-emscripten'
 import { VMInitOpts } from './types'
+import { Marshaller } from './marshal'
 
 export class VM {
   module?: QuickJSWASMModule
   runtime?: QuickJSRuntime
   vm?: QuickJSContext
+
+  marshaller: Marshaller = new Marshaller()
 
   ready: boolean = false
   private _readyPromise?: {
@@ -39,6 +42,8 @@ export class VM {
     this.module = module
     this.runtime = runtime
     this.vm = vm
+
+    this.marshaller.init(vm)
 
     this.setReady(true)
   }

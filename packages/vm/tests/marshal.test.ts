@@ -101,7 +101,7 @@ describe('Marshal JS value to VM value', () => {
       const vm = new VM()
       await vm.init()
       await vm.awaitReady()
-      const marshaller = new Marshaller(vm.vm)
+      const marshaller = vm.marshaller
 
       const jsValue = {
         bool: true,
@@ -127,7 +127,7 @@ describe('Marshal JS value to VM value', () => {
       const manager = new VM()
       await manager.init()
       await manager.awaitReady()
-      const marshaller = new Marshaller(manager.vm)
+      const marshaller = manager.marshaller
       const vm = manager.vm!
 
       let callCount = 0
@@ -151,6 +151,31 @@ describe('Marshal JS value to VM value', () => {
         expect(callCount).to.equal(4)
         expect(calledCount4).to.equal(4)
       })
+    })
+
+    it('can reverse proxy functions', async () => {
+      const manager = new VM()
+      await manager.init()
+      await manager.awaitReady()
+      const marshaller = manager.marshaller
+      const vm = manager.vm!
+
+      vm.setProp(vm.global, '__callCount', vm.newNumber(0))
+      const incrementer = vm.unwrapResult(vm.evalCode(`() => ++__callCount`))
+      vm.setProp(vm.global, '__increment', incrementer)
+
+      const callResult = vm.unwrapResult(vm.evalCode(`__increment()`))
+      expect(vm.getNumber(callResult)).to.equal(1)
+      expect(vm.getNumber(vm.getProp(vm.global, '__callCount'))).to.equal(1)
+
+      const proxyFunc = marshaller.vmToJS(incrementer)
+
+      const jsResult = proxyFunc()
+      expect(jsResult).to.equal(2)
+      expect(vm.getNumber(vm.getProp(vm.global, '__callCount'))).to.equal(2)
+
+      incrementer.dispose()
+      callResult.dispose()
     })
   })
 })

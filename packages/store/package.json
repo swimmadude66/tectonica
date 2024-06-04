@@ -25,10 +25,7 @@
     "dev": "concurrently \"npm:dev:*\"",
     "lint": "eslint src"
   },
-  "devDependencies": {
-    "rimraf": "5.0.5",
-    "typescript": "^5.3.3"
-  },
+  "devDependencies": {},
   "peerDependencies": {
     "rxjs": "^7.8.1"
   }

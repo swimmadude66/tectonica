@@ -1,0 +1,34 @@
+{
+  "name": "@tectonica/vm",
+  "version": "0.0.1",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/esm/index.js"
+    }
+  },
+  "files": [
+    "dist/**"
+  ],
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build:lib": "tsup",
+    "build:types": "tsc -p tsconfig.cjs.json --emitDeclarationOnly --outDir dist/types",
+    "dev:lib": "tsup --watch",
+    "dev:types": "tsc -p tsconfig.cjs.json --emitDeclarationOnly --outDir dist/types --watch",
+    "build": "concurrently \"npm:build:*\"",
+    "dev": "concurrently \"npm:dev:*\"",
+    "lint": "eslint src",
+    "test": "mocha -r tsx tests/**/*.test.ts",
+    "publish-package": "pnpm publish --access public"
+  },
+  "dependencies": {
+    "quickjs-emscripten": "0.29.1"
+  },
+  "devDependencies": {},
+  "peerDependencies": {}
+}

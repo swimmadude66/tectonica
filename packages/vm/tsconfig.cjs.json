@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "es6",
+    "emitDecoratorMetadata": false,
+    "typeRoots": ["node_modules/@types/", "../../node_modules/@types/"],
+    "declaration": true,
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "outDir": "dist/cjs",
+    "declarationDir": "dist/types"
+  },
+  "include": ["src/"]
+}

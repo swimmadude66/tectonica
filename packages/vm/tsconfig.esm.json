@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "target": "es6",
+    "emitDecoratorMetadata": false,
+    "typeRoots": ["node_modules/@types/", "../../node_modules/@types/"],
+    "declaration": false,
+    "module": "ES6",
+    "moduleResolution": "Bundler",
+    "outDir": "dist/esm"
+  },
+  "include": ["src/"]
+}

@@ -53,14 +53,11 @@ export class Marshaller {
     if (!this.vm) {
       throw new Error('VM not initialized')
     }
-    const handle = this.vm.unwrapResult(
-      this.vm.callFunction(
-        this.vm.getProp(this.vm.global, '__marshalValue'),
-        this.vm.global,
-        this.vm.newString(serializedValue.serialized),
-        this.vm.newString(serializedValue.token)
-      )
-    )
+    const serialHandle = this.vm.newString(serializedValue.serialized)
+    const tokenHandle = this.vm.newString(serializedValue.token)
+    const handle = this.vm.unwrapResult(this.vm.callFunction(this.vm.getProp(this.vm.global, '__marshalValue'), this.vm.global, serialHandle, tokenHandle))
+    serialHandle.dispose()
+    tokenHandle.dispose()
     if (!PRIMITIVE_TYPES.includes(typeof value)) {
       this._handleCache.set(value, handle)
     }
@@ -100,6 +97,11 @@ export class Marshaller {
       if (Array.isArray(value)) {
         const mappedChildren = value.map((child) => this.serializeJSValue(child, tkn).serialized)
         return { serialized: `[${mappedChildren.join(', ')}]`, token: tkn }
+      }
+      if (value instanceof Promise || 'then' in value) {
+        const valueId = generateRandomId()
+        this.valueCache.set(valueId, value)
+        return { serialized: `{"type": "promise", "${tkn}": "${valueId}"}`, token: tkn }
       }
       // object
       const entries: string[] = []
@@ -192,11 +194,12 @@ export class Marshaller {
       throw new Error('VM not initialized')
     }
     const vm = this.vm
-    const getter = vm.unwrapResult(vm.evalCode(`(cacheId, key) => __valueCache.get(cacheId)?.[key]`))
+    const getter = vm.getProp(vm.global, '__vmCacheGetter')
     const cacheIdHandle = vm.newString(cacheId)
     const keyHandle = this.marshal(key)
     const returnValHandle = vm.unwrapResult(vm.callFunction(getter, vm.global, cacheIdHandle, keyHandle))
     const jsVal = this.unmarshal(returnValHandle)
+    getter.dispose()
     cacheIdHandle.dispose()
     keyHandle.dispose()
     returnValHandle.dispose()
@@ -208,18 +211,13 @@ export class Marshaller {
       throw new Error('VM not initialized')
     }
     const vm = this.vm
-    const setter = vm.unwrapResult(
-      vm.evalCode(`(cacheId, key, val) => {
-        __valueCache.get(cacheId)?.[key] = val
-        return true
-      }
-    `)
-    )
+    const setter = vm.getProp(vm.global, '__vmCacheSetter')
     const cacheIdHandle = vm.newString(cacheId)
     const keyHandle = this.marshal(key)
     const newValHandle = this.marshal(newVal)
     const returnValHandle = vm.unwrapResult(vm.callFunction(setter, vm.global, cacheIdHandle, keyHandle, newValHandle))
     const jsVal = this.unmarshal(returnValHandle)
+    setter.dispose()
     cacheIdHandle.dispose()
     keyHandle.dispose()
     newValHandle.dispose()
@@ -232,17 +230,7 @@ export class Marshaller {
       throw new Error('VM not initialized')
     }
     const vm = this.vm
-    const caller = vm.unwrapResult(
-      vm.evalCode(`
-      (cacheId, argsArray) => {
-        const cachedFunc = __valueCache.get(cacheId)
-        if (typeof cachedFunc === 'function') {
-          return cachedFunc(...argsArray)
-        }
-        throw new Error('Not a function')
-      }
-    `)
-    )
+    const caller = vm.getProp(vm.global, '__vmCacheCaller')
     const cacheIdHandle = vm.newString(cacheId)
     const argArrayHandle = this.marshal(args)
     const returnValHandle = vm.unwrapResult(vm.callFunction(caller, vm.global, cacheIdHandle, argArrayHandle))
@@ -250,6 +238,7 @@ export class Marshaller {
     cacheIdHandle.dispose()
     argArrayHandle.dispose()
     returnValHandle.dispose()
+    caller.dispose()
     return jsVal
   }
 
@@ -283,6 +272,21 @@ export class Marshaller {
       }
     `)
     ).consume((caller) => vm.setProp(vm.global, '__vmCacheCaller', caller))
+
+    vm.newFunction('__getCachedPromise', (cacheIdHandle) => {
+      const cacheId = vm.getString(cacheIdHandle)
+      const cachedPromise = this.valueCache.get(cacheId)
+      if (!cachedPromise) {
+        throw new Error('No such promise')
+      }
+      const vmPromise = vm.newPromise()
+      cachedPromise.then(
+        (results) => vmPromise.resolve(this.marshal(results)),
+        (reason) => vmPromise.reject(this.marshal(reason))
+      )
+      vmPromise.settled.then(vm.runtime.executePendingJobs)
+      return vmPromise.handle
+    }).consume((promiseGetter) => vm.setProp(vm.global, '__getCachedPromise', promiseGetter))
 
     vm.newFunction('__getCacheItemGetter', (cacheIdHandle, keyHandle) => {
       const cacheId = vm.getString(cacheIdHandle)
@@ -338,6 +342,9 @@ export class Marshaller {
                   }
                   case 'symbol': {
                     return Symbol.for(val[token])
+                  }
+                  case 'promise': {
+                    return __getCachedPromise(val[token])
                   }
                   case 'function': {
                     return new Proxy(() => 0, {

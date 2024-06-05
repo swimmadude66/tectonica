@@ -18,20 +18,6 @@ export class Marshaller {
 
   constructor(private vm?: QuickJSContext) {
     if (vm) {
-      // // Temp placement of console stdlib for debugging
-      // vm.newObject().consume((_consoleObj) => {
-      //   vm.newFunction('log', (...args) => {
-      //     const rawArgs = args.map((a) => vm.dump(a))
-      //     console.log(...rawArgs)
-      //   }).consume((log) => vm.setProp(_consoleObj, 'log', log))
-      //   vm.newFunction('error', (...args) => {
-      //     const rawArgs = args.map((a) => vm.dump(a))
-      //     console.error(...rawArgs)
-      //   }).consume((err) => vm.setProp(_consoleObj, 'error', err))
-
-      //   vm.setProp(vm.global, 'console', _consoleObj)
-      // })
-
       // init
       this.init(vm)
     }
@@ -42,45 +28,80 @@ export class Marshaller {
     this._initHelpers(vm)
   }
 
-  marshal(value: any): QuickJSHandle {
-    if (!PRIMITIVE_TYPES.includes(typeof value)) {
-      const cachedHandle = this._handleCache.get(value)
-      if (cachedHandle != null && cachedHandle.alive) {
-        return cachedHandle
-      }
-    }
-    if (!this.vm) {
+  getVM(): QuickJSContext {
+    if (!this.vm?.alive) {
       throw new Error('VM not initialized')
     }
-    if (typeof value === 'undefined') {
-      return this.vm.undefined
-    }
-    if (value === null) {
-      return this.vm.null
-    }
-    // TODO: more short-circuits for primitives?
-    const serializedValue = this.serializeJSValue(value)
+    return this.vm
+  }
 
-    const serialHandle = this.vm.newString(serializedValue.serialized)
-    const tokenHandle = this.vm.newString(serializedValue.token)
-    const handle = this.vm.unwrapResult(this.vm.callFunction(this.vm.getProp(this.vm.global, '__marshalValue'), this.vm.global, serialHandle, tokenHandle))
+  marshal(value: any): QuickJSHandle {
+    const vm = this.getVM()
+    if (value === null) {
+      return vm.null
+    }
+    const valueType = typeof value
+    if (valueType === 'undefined') {
+      return vm.undefined
+    }
+    if (valueType === 'string') {
+      return vm.newString(value)
+    }
+    if (valueType === 'number') {
+      return vm.newNumber(value)
+    }
+    if (valueType === 'boolean') {
+      return value ? vm.true : vm.false
+    }
+    if (valueType === 'bigint') {
+      return vm.newBigInt(value)
+    }
+    const cachedHandle = this._handleCache.get(value)
+    if (cachedHandle?.alive) {
+      return cachedHandle
+    }
+    if (valueType === 'symbol') {
+      const symbolHandle = vm.newSymbolFor(value)
+      this._handleCache.set(value, symbolHandle)
+      return symbolHandle
+    }
+
+    const serializedValue = this.serializeJSValue(value)
+    const serialHandle = vm.newString(serializedValue.serialized)
+    const tokenHandle = vm.newString(serializedValue.token)
+    const handle = vm.unwrapResult(vm.callFunction(vm.getProp(vm.global, '__marshalValue'), vm.global, serialHandle, tokenHandle))
     serialHandle.dispose()
     tokenHandle.dispose()
-    if (!PRIMITIVE_TYPES.includes(typeof value)) {
-      this._handleCache.set(value, handle)
-    }
+    this._handleCache.set(value, handle)
     return handle
   }
 
   unmarshal(handle: QuickJSHandle): any {
-    if (!this.vm) {
-      throw new Error('VM not initialized')
+    const vm = this.getVM()
+    const handleType = vm.typeof(handle)
+    if (handleType === 'undefined') {
+      return undefined
     }
-    const serializer = this.vm.getProp(this.vm.global, '__unmarshalValue')
-    const serialHandle = this.vm.unwrapResult(this.vm.callFunction(serializer, this.vm.global, handle))
-    const serial = this.vm.getProp(serialHandle, 'serialized').consume((s) => this.vm?.getString(s))
-    const token = this.vm.getProp(serialHandle, 'token').consume((s) => this.vm?.getString(s))
-    return this.deserializeVMValue(serial!, token!, true)
+    if (handleType === 'string') {
+      return vm.getString(handle)
+    }
+    if (handleType === 'number') {
+      return vm.getNumber(handle)
+    }
+    if (handleType === 'symbol') {
+      return vm.getSymbol(handle)
+    }
+    // boolean, bigint, and others need more care
+    const serializer = vm.getProp(vm.global, '__unmarshalValue')
+    const serialObjHandle = vm.unwrapResult(vm.callFunction(serializer, vm.global, handle))
+    const serialHandle = vm.getProp(serialObjHandle, 'serialized')
+    const tokenHandle = vm.getProp(serialObjHandle, 'token')
+    const serial = vm.getString(serialHandle)
+    const token = vm.getString(tokenHandle)
+    serialHandle.dispose()
+    tokenHandle.dispose()
+    serialObjHandle.dispose()
+    return this.deserializeVMValue(serial, token, true)
   }
 
   serializeJSValue(value: any, magicToken?: string): { serialized: string; token: string } {
@@ -158,34 +179,11 @@ export class Marshaller {
             return this._getVMCachedPromise(val[token])
           }
           case 'function': {
-            return new Proxy(() => 0, {
-              get: (_target, key) => {
-                return this._getVMCacheItemKey(val[token], key)
-              },
-              set: (_target, key, newValue) => {
-                return this._setVMCacheItemKey(val[token], key, newValue)
-              },
-              apply: (_target, thisArg, argArray) => {
-                return this._callVMCacheItem(val[token], argArray, thisArg)
-              },
-            })
+            return this._createVMProxy(() => void 0, val[token])
           }
           case 'cache':
           default: {
-            return new Proxy(
-              {},
-              {
-                get: (_target, key) => {
-                  return this._getVMCacheItemKey(val[token], key)
-                },
-                set: (_target, key, newValue) => {
-                  return this._setVMCacheItemKey(val[token], key, newValue)
-                },
-                apply: (_target, thisArg, argArray) => {
-                  return this._callVMCacheItem(val[token], argArray, thisArg)
-                },
-              }
-            )
+            return this._createVMProxy({}, val[token])
           }
         }
       }
@@ -199,11 +197,22 @@ export class Marshaller {
     return val
   }
 
+  private _createVMProxy(base: any, cacheId: string) {
+    return new Proxy(base, {
+      get: (_target, key) => {
+        return this._getVMCacheItemKey(cacheId, key)
+      },
+      set: (_target, key, newValue) => {
+        return this._setVMCacheItemKey(cacheId, key, newValue)
+      },
+      apply: (_target, thisArg, argArray) => {
+        return this._callVMCacheItem(cacheId, argArray, thisArg)
+      },
+    })
+  }
+
   private _getVMCachedPromise(cacheId: string) {
-    if (!this.vm) {
-      throw new Error('VM not initialized')
-    }
-    const vm = this.vm
+    const vm = this.getVM()
     const promiseGetter = vm.getProp(vm.global, '__vmCachedPromiseGetter')
     const cacheIdHandle = vm.newString(cacheId)
     const cachedPromiseHandle = vm.unwrapResult(vm.callFunction(promiseGetter, vm.global, cacheIdHandle))
@@ -211,6 +220,7 @@ export class Marshaller {
     promiseGetter.dispose()
     cacheIdHandle.dispose()
     cachedPromiseHandle.dispose()
+    vm.runtime.executePendingJobs()
     return nativePromise.then((result) => {
       const resultHandle = vm.unwrapResult(result)
       const jsVal = this.unmarshal(resultHandle)
@@ -220,10 +230,7 @@ export class Marshaller {
   }
 
   private _getVMCacheItemKey(cacheId: string, key: string | symbol): any {
-    if (!this.vm) {
-      throw new Error('VM not initialized')
-    }
-    const vm = this.vm
+    const vm = this.getVM()
     const getter = vm.getProp(vm.global, '__vmCacheGetter')
     const cacheIdHandle = vm.newString(cacheId)
     const keyHandle = this.marshal(key)
@@ -237,10 +244,7 @@ export class Marshaller {
   }
 
   private _setVMCacheItemKey(cacheId: string, key: string | symbol, newVal: any): any {
-    if (!this.vm) {
-      throw new Error('VM not initialized')
-    }
-    const vm = this.vm
+    const vm = this.getVM()
     const setter = vm.getProp(vm.global, '__vmCacheSetter')
     const cacheIdHandle = vm.newString(cacheId)
     const keyHandle = this.marshal(key)
@@ -256,10 +260,7 @@ export class Marshaller {
   }
 
   private _callVMCacheItem(cacheId: string, args: any[], _this?: any): any {
-    if (!this.vm) {
-      throw new Error('VM not initialized')
-    }
-    const vm = this.vm
+    const vm = this.getVM()
     const caller = vm.getProp(vm.global, '__vmCacheCaller')
     const cacheIdHandle = vm.newString(cacheId)
     const argArrayHandle = this.marshal(args)
@@ -365,6 +366,22 @@ export class Marshaller {
     }).consume((caller) => vm.setProp(vm.global, '__callCacheItemFunction', caller))
 
     vm.unwrapResult(
+      vm.evalCode(`(base, cacheId) => {
+        return new Proxy(base, {
+          get: (_target, key) => {
+            return __getCacheItemKey(cacheId, key)
+          },
+          set: (_target, key, newValue) => {
+            return __setCacheItemKey(cacheId, key, newValue)
+          },
+          apply: (_target, thisArg, argArray) => {
+            return __callCacheItemFunction(cacheId, argArray, thisArg)
+          }
+        })
+    }`)
+    ).consume((proxyCreator) => vm.setProp(vm.global, '__createVMProxy', proxyCreator))
+
+    vm.unwrapResult(
       vm.evalCode(`
           (valueString, token, json = true) => {
             const val = json ? JSON.parse(valueString) : valueString
@@ -397,31 +414,11 @@ export class Marshaller {
                     return __getCachedPromise(val[token])
                   }
                   case 'function': {
-                    return new Proxy(() => 0, {
-                      get: (_target, key) => {
-                        return __getCacheItemKey(val[token], key)
-                      },
-                      set: (_target, key, newValue) => {
-                        return __setCacheItemKey(val[token], key, newValue)
-                      },
-                      apply: (_target, thisArg, argArray) => {
-                        return __callCacheItemFunction(val[token], argArray, thisArg)
-                      }
-                    })
+                    return __createVMProxy(() => void 0, val[token])
                   }
                   case 'cache':
                   default: {
-                    return new Proxy({}, {
-                      get: (_target, key) => {
-                        return __getCacheItemKey(val[token], key)
-                      },
-                      set: (_target, key, newValue) => {
-                        return __setCacheItemKey(val[token], key, newValue)
-                      },
-                      apply: (_target, thisArg, argArray) => {
-                        return __callCacheItemFunction(val[token], argArray, thisArg)
-                      }
-                    })
+                    return __createVMProxy({}, val[token])
                   }
                 }
               }

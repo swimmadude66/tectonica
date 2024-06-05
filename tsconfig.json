@@ -3,7 +3,7 @@
     "declaration": true,
     "allowJs": false,
     "esModuleInterop": true,
-    "jsx": "react-jsx",
+    "jsx": "preserve",
     "experimentalDecorators": true,
     "pretty": true,
     "resolveJsonModule": true,
@@ -20,5 +20,6 @@
     "module": "ESNext",
     "target": "esnext"
   },
+  "include": [],
   "exclude": ["**/node_modules/**", "**/dist/**", "**/examples/**"]
 }

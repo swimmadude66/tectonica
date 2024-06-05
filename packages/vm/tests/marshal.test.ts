@@ -2,7 +2,7 @@ import { expect } from 'chai'
 import { Marshaller } from '../src/marshal'
 import { VM } from '../src/vm'
 
-describe('Marshal JS value to VM value', () => {
+describe('Marshaller service', () => {
   describe('serialize JS value', () => {
     it('properly serializes primitive values', () => {
       const marshaller = new Marshaller()
@@ -138,7 +138,9 @@ describe('Marshal JS value to VM value', () => {
       expect(parsedSerial['object']['func']).to.have.keys(['type', token])
       expect(parsedSerial['object']['symbol']).to.have.keys(['type', token])
     })
+  })
 
+  describe('marshal and unmarshal', () => {
     it('can proxy functions', async () => {
       const manager = new VM()
       await manager.init()
@@ -267,6 +269,39 @@ describe('Marshal JS value to VM value', () => {
           setTimeout(() => done(), 0)
         })
       })
+    })
+
+    it('can unmarshal promises', async () => {
+      const manager = new VM()
+      await manager.init()
+
+      const vm = manager.vm!
+
+      const promiseFunc = vm.unwrapResult(
+        vm.evalCode(`(shouldResolve, data) => {
+          return new Promise((resolve, reject) => {
+            if (shouldResolve) {
+              resolve(data)
+            } else {
+              reject(data)
+            }
+          })
+        }`)
+      )
+
+      const promise1Handle = vm.unwrapResult(vm.callFunction(promiseFunc, vm.global, vm.true, vm.newNumber(6)))
+      const promise1 = manager.marshaller.unmarshal(promise1Handle) as Promise<number>
+      const results = await promise1
+      expect(results).to.equal(6)
+      const promise2Handle = vm.unwrapResult(vm.callFunction(promiseFunc, vm.global, vm.false, vm.newNumber(6)))
+      const promise2 = manager.marshaller.unmarshal(promise2Handle) as Promise<number>
+      try {
+        await promise2
+      } catch (reason) {
+        expect(reason).not.to.be.null
+        expect(reason!['cause']).to.equal(6)
+      }
+      promiseFunc.dispose()
     })
   })
 })

@@ -193,5 +193,80 @@ describe('Marshal JS value to VM value', () => {
       incrementer.dispose()
       callResult.dispose()
     })
+
+    it('can marshal promises', async () => {
+      const manager = new VM()
+      await manager.init()
+
+      const vm = manager.vm!
+      return await new Promise((done) => {
+        vm.unwrapResult(vm.evalCode(`({resolves: 0, rejects: 0, finallys: 0})`)).consume((counter) => vm.setProp(vm.global, '__counters', counter))
+        const promiseListenerFunc = vm.unwrapResult(
+          vm.evalCode(`(prom) => {
+            prom.then((result) => {
+              __counters.resolves++
+            }, (reason) => {
+              __counters.rejects++
+            }).finally(() => {
+              __counters.finallys++
+            })
+          }`)
+        )
+
+        const promise1 = new Promise<void>((resolve) => {
+          setTimeout(() => resolve(), 0)
+        })
+        const promise1Handle = manager.marshaller.marshal(promise1)
+        vm.unwrapResult(vm.callFunction(promiseListenerFunc, vm.global, promise1Handle)).dispose()
+
+        promise1.finally(() => {
+          setTimeout(() => {
+            const countersHandler = vm.getProp(vm.global, '__counters')
+            const resolvesHandle = vm.getProp(countersHandler, 'resolves')
+            const resolves = vm.getNumber(resolvesHandle)
+            expect(resolves).to.equal(1)
+            const rejectsHandle = vm.getProp(countersHandler, 'rejects')
+            const rejects = vm.getNumber(rejectsHandle)
+            expect(rejects).to.equal(0)
+            const finallyHandle = vm.getProp(countersHandler, 'finallys')
+            const finallys = vm.getNumber(finallyHandle)
+            expect(finallys).to.equal(1)
+            finallyHandle.dispose()
+            rejectsHandle.dispose()
+            resolvesHandle.dispose()
+            countersHandler.dispose()
+          }, 0)
+        })
+
+        const promise2 = new Promise<void>((_resolve, reject) => {
+          setTimeout(() => reject(), 10)
+        })
+        const promise2Handle = manager.marshaller.marshal(promise2)
+        vm.unwrapResult(vm.callFunction(promiseListenerFunc, vm.global, promise2Handle)).dispose()
+
+        promise2.finally(() => {
+          setTimeout(() => {
+            const countersHandler = vm.getProp(vm.global, '__counters')
+            const resolvesHandle = vm.getProp(countersHandler, 'resolves')
+            const resolves = vm.getNumber(resolvesHandle)
+            expect(resolves).to.equal(1)
+            const rejectsHandle = vm.getProp(countersHandler, 'rejects')
+            const rejects = vm.getNumber(rejectsHandle)
+            expect(rejects).to.equal(1)
+            const finallyHandle = vm.getProp(countersHandler, 'finallys')
+            const finallys = vm.getNumber(finallyHandle)
+            expect(finallys).to.equal(2)
+            finallyHandle.dispose()
+            rejectsHandle.dispose()
+            resolvesHandle.dispose()
+            countersHandler.dispose()
+          }, 0)
+        })
+
+        Promise.allSettled([promise1, promise2]).finally(() => {
+          setTimeout(() => done(), 0)
+        })
+      })
+    })
   })
 })

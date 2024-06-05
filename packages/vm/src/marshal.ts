@@ -49,10 +49,18 @@ export class Marshaller {
         return cachedHandle
       }
     }
-    const serializedValue = this.serializeJSValue(value)
     if (!this.vm) {
       throw new Error('VM not initialized')
     }
+    if (typeof value === 'undefined') {
+      return this.vm.undefined
+    }
+    if (value === null) {
+      return this.vm.null
+    }
+    // TODO: more short-circuits for primitives?
+    const serializedValue = this.serializeJSValue(value)
+
     const serialHandle = this.vm.newString(serializedValue.serialized)
     const tokenHandle = this.vm.newString(serializedValue.token)
     const handle = this.vm.unwrapResult(this.vm.callFunction(this.vm.getProp(this.vm.global, '__marshalValue'), this.vm.global, serialHandle, tokenHandle))
@@ -120,7 +128,6 @@ export class Marshaller {
   }
 
   deserializeVMValue(serialized: string, token: string, json: boolean = true): any {
-    // console.log('deserializing', { serialized, token })
     const val = json ? JSON.parse(serialized) : serialized
     const valType = typeof val
     if (valType === 'object') {
@@ -146,6 +153,9 @@ export class Marshaller {
           }
           case 'symbol': {
             return Symbol.for(val[token])
+          }
+          case 'promise': {
+            return this._getVMCachedPromise(val[token])
           }
           case 'function': {
             return new Proxy(() => 0, {
@@ -187,6 +197,26 @@ export class Marshaller {
       return parsedVal
     }
     return val
+  }
+
+  private _getVMCachedPromise(cacheId: string) {
+    if (!this.vm) {
+      throw new Error('VM not initialized')
+    }
+    const vm = this.vm
+    const promiseGetter = vm.getProp(vm.global, '__vmCachedPromiseGetter')
+    const cacheIdHandle = vm.newString(cacheId)
+    const cachedPromiseHandle = vm.unwrapResult(vm.callFunction(promiseGetter, vm.global, cacheIdHandle))
+    const nativePromise = vm.resolvePromise(cachedPromiseHandle)
+    promiseGetter.dispose()
+    cacheIdHandle.dispose()
+    cachedPromiseHandle.dispose()
+    return nativePromise.then((result) => {
+      const resultHandle = vm.unwrapResult(result)
+      const jsVal = this.unmarshal(resultHandle)
+      resultHandle.dispose()
+      return jsVal
+    })
   }
 
   private _getVMCacheItemKey(cacheId: string, key: string | symbol): any {
@@ -247,6 +277,16 @@ export class Marshaller {
 
     vm.newFunction('__generateRandomId', () => vm.newString(generateRandomId())).consume((generator) => vm.setProp(vm.global, '__generateRandomId', generator))
 
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId) => {
+      const cachedPromise = __valueCache.get(cacheId)
+      if (!cachedPromise || !('then' in cachedPromise)) {
+        throw new Error('unknown promise')
+      }
+      return cachedPromise
+    }`)
+    ).consume((promiseGetter) => vm.setProp(vm.global, '__vmCachedPromiseGetter', promiseGetter))
+
     vm.unwrapResult(vm.evalCode(`(cacheId, key) => __valueCache.get(cacheId)?.[key]`)).consume((getter) => vm.setProp(vm.global, '__vmCacheGetter', getter))
 
     vm.unwrapResult(
@@ -281,8 +321,18 @@ export class Marshaller {
       }
       const vmPromise = vm.newPromise()
       cachedPromise.then(
-        (results) => vmPromise.resolve(this.marshal(results)),
-        (reason) => vmPromise.reject(this.marshal(reason))
+        (results) => {
+          this.marshal(results).consume((r) => {
+            vmPromise.resolve(this.marshal(r))
+          })
+          return results
+        },
+        (reason) => {
+          this.marshal(reason).consume((r) => {
+            vmPromise.reject(r)
+          })
+          throw reason
+        }
       )
       vmPromise.settled.then(vm.runtime.executePendingJobs)
       return vmPromise.handle
@@ -410,6 +460,11 @@ export class Marshaller {
               if (Array.isArray(value)) {
                 const mappedChildren = value.map((child) => __unmarshalValue(child, tkn).serialized)
                 return { serialized: '['+mappedChildren.join(', ')+']', token: tkn }
+              }
+              if (value instanceof Promise || 'then' in value) {
+                const valueId = __generateRandomId()
+                __valueCache.set(valueId, value)
+                return { serialized: '{"type": "promise", "'+tkn+'": "'+valueId+'"}', token: tkn}
               }
               // regular object
               const entries = []

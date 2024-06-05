@@ -28,6 +28,22 @@ describe('Marshal JS value to VM value', () => {
       expect(symbolData[symbolToken]).to.equal(Symbol.keyFor(symbol) ?? symbol.description)
     })
 
+    it('properly serializes bigints', () => {
+      const marshaller = new Marshaller()
+
+      // bigint
+      const bigint = 999999999999999999999999n
+      const { serialized, token } = marshaller.serializeJSValue(bigint)
+      expect(serialized).to.be.a.string
+      expect(token).to.be.a.string
+      const data = JSON.parse(serialized)
+      expect(data).to.have.keys(['type', token])
+      expect(data.type).to.equal('bigint')
+      expect(data[token]).to.be.a.string
+      expect(data[token]).to.equal(bigint.toString())
+      expect(BigInt(data[token])).to.equal(bigint)
+    })
+
     it('properly serializes values which must be cached', () => {
       const marshaller = new Marshaller()
 
@@ -134,7 +150,7 @@ describe('Marshal JS value to VM value', () => {
       function increment() {
         return ++callCount
       }
-      const vmFunc = marshaller.jsToVM(increment)
+      const vmFunc = marshaller.marshal(increment)
       vmFunc.consume((vf) => {
         vm.setProp(vm.global, '__incrementTest', vf)
         // call function
@@ -168,7 +184,7 @@ describe('Marshal JS value to VM value', () => {
       expect(vm.getNumber(callResult)).to.equal(1)
       expect(vm.getNumber(vm.getProp(vm.global, '__callCount'))).to.equal(1)
 
-      const proxyFunc = marshaller.vmToJS(incrementer)
+      const proxyFunc = marshaller.unmarshal(incrementer)
 
       const jsResult = proxyFunc()
       expect(jsResult).to.equal(2)

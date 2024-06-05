@@ -18,18 +18,19 @@ export class Marshaller {
 
   constructor(private vm?: QuickJSContext) {
     if (vm) {
-      // Temp placement of console stdlib for debugging
-      vm.newObject().consume((_consoleObj) => {
-        vm.setProp(
-          _consoleObj,
-          'log',
-          vm.newFunction('log', (...args) => {
-            const rawArgs = args.map((a) => vm.dump(a))
-            console.log(...rawArgs)
-          })
-        )
-        vm.setProp(vm.global, 'console', _consoleObj)
-      })
+      // // Temp placement of console stdlib for debugging
+      // vm.newObject().consume((_consoleObj) => {
+      //   vm.newFunction('log', (...args) => {
+      //     const rawArgs = args.map((a) => vm.dump(a))
+      //     console.log(...rawArgs)
+      //   }).consume((log) => vm.setProp(_consoleObj, 'log', log))
+      //   vm.newFunction('error', (...args) => {
+      //     const rawArgs = args.map((a) => vm.dump(a))
+      //     console.error(...rawArgs)
+      //   }).consume((err) => vm.setProp(_consoleObj, 'error', err))
+
+      //   vm.setProp(vm.global, 'console', _consoleObj)
+      // })
 
       // init
       this.init(vm)
@@ -38,183 +39,10 @@ export class Marshaller {
 
   init(vm: QuickJSContext) {
     this.vm = vm
-
-    vm.setProp(
-      vm.global,
-      '__valueCache',
-      vm.unwrapResult(
-        vm.evalCode(`
-            new Map()
-          `)
-      )
-    )
-
-    vm.setProp(
-      vm.global,
-      '__generateRandomId',
-      vm.newFunction('__generateRandomId', () => vm.newString(generateRandomId()))
-    )
-
-    vm.setProp(
-      vm.global,
-      '__getCacheItemKey',
-      vm.newFunction('__getCacheItemGetter', (cacheIdHandle, keyHandle) => {
-        const cacheId = vm.getString(cacheIdHandle)
-        const key = vm.typeof(keyHandle) === 'symbol' ? vm.getSymbol(keyHandle) : vm.getString(keyHandle)
-        const cachedItem = this.valueCache.get(cacheId)
-        return this.jsToVM(cachedItem[key])
-      })
-    )
-
-    vm.setProp(
-      vm.global,
-      '__setCacheItemKey',
-      vm.newFunction('__setCacheItemGetter', (cacheIdHandle, keyHandle, valHandle) => {
-        const cacheId = vm.getString(cacheIdHandle)
-        const key = vm.typeof(keyHandle) === 'symbol' ? vm.getSymbol(keyHandle) : vm.getString(keyHandle)
-        const val = vm.dump(valHandle) // TODO: replace with unmarshal
-        const cachedItem = this.valueCache.get(cacheId)
-        cachedItem[key] = val
-        return vm.true
-      })
-    )
-
-    vm.setProp(
-      vm.global,
-      '__callCacheItemFunction',
-      vm.newFunction('__callCacheItemFunction', (cacheIdHandle, argsArrayHandle, thisHandle) => {
-        const cacheId = vm.getString(cacheIdHandle)
-        const cachedItem = this.valueCache.get(cacheId)
-        const args = vm.dump(argsArrayHandle) // TODO: replace with unmarshal
-        if (typeof cachedItem === 'function') {
-          return this.jsToVM(cachedItem(...args))
-        }
-        return vm.undefined
-      })
-    )
-
-    vm.setProp(
-      vm.global,
-      '__marshalValue',
-      vm.unwrapResult(
-        vm.evalCode(`
-          (valueString, token, json = true) => {
-            const val = json ? JSON.parse(valueString) : valueString
-            const valType = typeof val
-            if (valType === 'object') {
-              if (Array.isArray(val)) {
-                const parsedVal = []
-                // handle array
-                for (const child of val) {
-                  parsedVal.push(__marshalValue(child, token, false))
-                }
-                return parsedVal
-              }
-              if (token in val) {
-                // handle specials
-                switch(val['type']) {
-                  case 'undefined': {
-                    return undefined
-                  }
-                  case 'null': {
-                    return null
-                  }
-                  case 'bigint': {
-                    return BigInt(val[token])
-                  }
-                  case 'symbol': {
-                    return Symbol.for(val[token])
-                  }
-                  case 'function': {
-                    return new Proxy(() => 0, {
-                      get: (_target, key) => {
-                        return __getCacheItemKey(val[token], key)
-                      },
-                      set: (_target, key, newValue) => {
-                        return __setCacheItemKey(val[token], key, newValue)
-                      },
-                      apply: (_target, thisArg, argArray) => {
-                        return __callCacheItemFunction(val[token], argArray, thisArg)
-                      }
-                    })
-                  }
-                  case 'cache':
-                  default: {
-                    return new Proxy({}, {
-                      get: (_target, key) => {
-                        return __getCacheItemKey(val[token], key)
-                      },
-                      set: (_target, key, newValue) => {
-                        return __setCacheItemKey(val[token], key, newValue)
-                      },
-                      apply: (_target, thisArg, argArray) => {
-                        return __callCacheItemFunction(val[token], argArray, thisArg)
-                      }
-                    })
-                  }
-                }
-              }
-              // handle regular object
-              const parsedVal = {}
-              for (const key in val) {
-                parsedVal[key] = __marshalValue(val[key], token, false)
-              }
-              return parsedVal
-            }
-            return val
-          }
-        `)
-      )
-    )
-
-    vm.setProp(
-      vm.global,
-      '__unmarshalValue',
-      vm.unwrapResult(
-        vm.evalCode(`
-          (value, tkn = __generateRandomId() ) => {
-            const valueType = typeof value
-            if (['string', 'number', 'boolean'].includes(valueType)) {
-              return { serialized: JSON.stringify(value), token: tkn }
-            }
-            if (valueType === 'undefined') {
-              return { serialized: '{"type": "undefined", "'+tkn+'": true}', token: tkn }
-            }
-            if (valueType === 'bigint') {
-              return { serialized: '{"type": "bigint", "'+tkn+'": "'+BigInt(value).toString()+'"}', token: tkn }
-            }
-            if (valueType === 'symbol') {
-              return { serialized: '{"type": "symbol", "'+tkn+'": "'+(Symbol.keyFor(value) ?? value.description)+'"}', token: tkn }
-            }
-            if (valueType === 'object') {
-              if (value === null) {
-                return { serialized: '{"type": "null", "'+tkn+'": true}', token: tkn }
-              }
-              if (Array.isArray(value)) {
-                const mappedChildren = value.map((child) => __unmarshalValue(child, tkn).serialized)
-                return { serialized: '['+mappedChildren.join(', ')+']', token: tkn }
-              }
-              // regular object
-              const entries = []
-              for (let prop in value) {
-                entries.push('"'+prop+'": '+__unmarshalValue(value[prop], tkn).serialized)
-              }
-              return { serialized: '{'+entries.join(', ')+'}', token: tkn }
-            }
-            const valueId = __generateRandomId()
-            __valueCache.set(valueId, value)
-            if (valueType === 'function') {
-              // TODO add "this" scoping support
-              return { serialized: '{"type": "function", "'+tkn+'": "'+valueId+'"}', token: tkn }
-            }
-            return { serialized: '{"type": "cache", "'+tkn+'": "'+valueId+'"}', token: tkn }
-          }
-        `)
-      )
-    )
+    this._initHelpers(vm)
   }
 
-  jsToVM(value: any): QuickJSHandle {
+  marshal(value: any): QuickJSHandle {
     if (!PRIMITIVE_TYPES.includes(typeof value)) {
       const cachedHandle = this._handleCache.get(value)
       if (cachedHandle != null && cachedHandle.alive) {
@@ -239,7 +67,7 @@ export class Marshaller {
     return handle
   }
 
-  vmToJS(handle: QuickJSHandle): any {
+  unmarshal(handle: QuickJSHandle): any {
     if (!this.vm) {
       throw new Error('VM not initialized')
     }
@@ -273,7 +101,7 @@ export class Marshaller {
         const mappedChildren = value.map((child) => this.serializeJSValue(child, tkn).serialized)
         return { serialized: `[${mappedChildren.join(', ')}]`, token: tkn }
       }
-      // regular object
+      // object
       const entries: string[] = []
       for (const prop in value) {
         entries.push(`"${prop}": ${this.serializeJSValue(value[prop], tkn).serialized}`)
@@ -366,9 +194,9 @@ export class Marshaller {
     const vm = this.vm
     const getter = vm.unwrapResult(vm.evalCode(`(cacheId, key) => __valueCache.get(cacheId)?.[key]`))
     const cacheIdHandle = vm.newString(cacheId)
-    const keyHandle = this.jsToVM(key)
+    const keyHandle = this.marshal(key)
     const returnValHandle = vm.unwrapResult(vm.callFunction(getter, vm.global, cacheIdHandle, keyHandle))
-    const jsVal = this.vmToJS(returnValHandle)
+    const jsVal = this.unmarshal(returnValHandle)
     cacheIdHandle.dispose()
     keyHandle.dispose()
     returnValHandle.dispose()
@@ -388,10 +216,10 @@ export class Marshaller {
     `)
     )
     const cacheIdHandle = vm.newString(cacheId)
-    const keyHandle = this.jsToVM(key)
-    const newValHandle = this.jsToVM(newVal)
+    const keyHandle = this.marshal(key)
+    const newValHandle = this.marshal(newVal)
     const returnValHandle = vm.unwrapResult(vm.callFunction(setter, vm.global, cacheIdHandle, keyHandle, newValHandle))
-    const jsVal = this.vmToJS(returnValHandle)
+    const jsVal = this.unmarshal(returnValHandle)
     cacheIdHandle.dispose()
     keyHandle.dispose()
     newValHandle.dispose()
@@ -416,12 +244,182 @@ export class Marshaller {
     `)
     )
     const cacheIdHandle = vm.newString(cacheId)
-    const argArrayHandle = this.jsToVM(args)
+    const argArrayHandle = this.marshal(args)
     const returnValHandle = vm.unwrapResult(vm.callFunction(caller, vm.global, cacheIdHandle, argArrayHandle))
-    const jsVal = this.vmToJS(returnValHandle)
+    const jsVal = this.unmarshal(returnValHandle)
     cacheIdHandle.dispose()
     argArrayHandle.dispose()
     returnValHandle.dispose()
     return jsVal
+  }
+
+  private _initHelpers(vm: QuickJSContext) {
+    vm.unwrapResult(vm.evalCode(`new Map()`)).consume((cache) => vm.setProp(vm.global, '__valueCache', cache))
+
+    vm.newFunction('__generateRandomId', () => vm.newString(generateRandomId())).consume((generator) => vm.setProp(vm.global, '__generateRandomId', generator))
+
+    vm.unwrapResult(vm.evalCode(`(cacheId, key) => __valueCache.get(cacheId)?.[key]`)).consume((getter) => vm.setProp(vm.global, '__vmCacheGetter', getter))
+
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId, key, val) => {
+        const cachedItem = __valueCache.get(cacheId)
+        if (!cachedItem) {
+          return false
+        }
+        cachedItem[key] = val
+        return true
+      }
+    `)
+    ).consume((setter) => vm.setProp(vm.global, '__vmCacheSetter', setter))
+
+    vm.unwrapResult(
+      vm.evalCode(`
+      (cacheId, argsArray) => {
+        const cachedFunc = __valueCache.get(cacheId)
+        if (typeof cachedFunc === 'function') {
+          return cachedFunc(...argsArray)
+        }
+        throw new Error('Not a function')
+      }
+    `)
+    ).consume((caller) => vm.setProp(vm.global, '__vmCacheCaller', caller))
+
+    vm.newFunction('__getCacheItemGetter', (cacheIdHandle, keyHandle) => {
+      const cacheId = vm.getString(cacheIdHandle)
+      const key = vm.typeof(keyHandle) === 'symbol' ? vm.getSymbol(keyHandle) : vm.getString(keyHandle)
+      const cachedItem = this.valueCache.get(cacheId)
+      return this.marshal(cachedItem[key])
+    }).consume((getter) => vm.setProp(vm.global, '__getCacheItemKey', getter))
+
+    vm.newFunction('__setCacheItemGetter', (cacheIdHandle, keyHandle, valHandle) => {
+      const cacheId = vm.getString(cacheIdHandle)
+      const key = vm.typeof(keyHandle) === 'symbol' ? vm.getSymbol(keyHandle) : vm.getString(keyHandle)
+      const val = this.unmarshal(valHandle)
+      const cachedItem = this.valueCache.get(cacheId)
+      cachedItem[key] = val
+      return vm.true
+    }).consume((setter) => vm.setProp(vm.global, '__setCacheItemKey', setter))
+
+    vm.newFunction('__callCacheItemFunction', (cacheIdHandle, argsArrayHandle, thisHandle) => {
+      const cacheId = vm.getString(cacheIdHandle)
+      const cachedItem = this.valueCache.get(cacheId)
+      const args = this.unmarshal(argsArrayHandle)
+      if (typeof cachedItem === 'function') {
+        return this.marshal(cachedItem(...args))
+      }
+      return vm.undefined
+    }).consume((caller) => vm.setProp(vm.global, '__callCacheItemFunction', caller))
+
+    vm.unwrapResult(
+      vm.evalCode(`
+          (valueString, token, json = true) => {
+            const val = json ? JSON.parse(valueString) : valueString
+            const valType = typeof val
+            if (valType === 'object') {
+              if (Array.isArray(val)) {
+                const parsedVal = []
+                // handle array
+                for (const child of val) {
+                  parsedVal.push(__marshalValue(child, token, false))
+                }
+                return parsedVal
+              }
+              if (token in val) {
+                // handle specials
+                switch(val['type']) {
+                  case 'undefined': {
+                    return undefined
+                  }
+                  case 'null': {
+                    return null
+                  }
+                  case 'bigint': {
+                    return BigInt(val[token])
+                  }
+                  case 'symbol': {
+                    return Symbol.for(val[token])
+                  }
+                  case 'function': {
+                    return new Proxy(() => 0, {
+                      get: (_target, key) => {
+                        return __getCacheItemKey(val[token], key)
+                      },
+                      set: (_target, key, newValue) => {
+                        return __setCacheItemKey(val[token], key, newValue)
+                      },
+                      apply: (_target, thisArg, argArray) => {
+                        return __callCacheItemFunction(val[token], argArray, thisArg)
+                      }
+                    })
+                  }
+                  case 'cache':
+                  default: {
+                    return new Proxy({}, {
+                      get: (_target, key) => {
+                        return __getCacheItemKey(val[token], key)
+                      },
+                      set: (_target, key, newValue) => {
+                        return __setCacheItemKey(val[token], key, newValue)
+                      },
+                      apply: (_target, thisArg, argArray) => {
+                        return __callCacheItemFunction(val[token], argArray, thisArg)
+                      }
+                    })
+                  }
+                }
+              }
+              // handle regular object
+              const parsedVal = {}
+              for (const key in val) {
+                parsedVal[key] = __marshalValue(val[key], token, false)
+              }
+              return parsedVal
+            }
+            return val
+          }
+        `)
+    ).consume((marshal) => vm.setProp(vm.global, '__marshalValue', marshal))
+
+    vm.unwrapResult(
+      vm.evalCode(`
+          (value, tkn = __generateRandomId() ) => {
+            const valueType = typeof value
+            if (['string', 'number', 'boolean'].includes(valueType)) {
+              return { serialized: JSON.stringify(value), token: tkn }
+            }
+            if (valueType === 'undefined') {
+              return { serialized: '{"type": "undefined", "'+tkn+'": true}', token: tkn }
+            }
+            if (valueType === 'bigint') {
+              return { serialized: '{"type": "bigint", "'+tkn+'": "'+BigInt(value).toString()+'"}', token: tkn }
+            }
+            if (valueType === 'symbol') {
+              return { serialized: '{"type": "symbol", "'+tkn+'": "'+(Symbol.keyFor(value) ?? value.description)+'"}', token: tkn }
+            }
+            if (valueType === 'object') {
+              if (value === null) {
+                return { serialized: '{"type": "null", "'+tkn+'": true}', token: tkn }
+              }
+              if (Array.isArray(value)) {
+                const mappedChildren = value.map((child) => __unmarshalValue(child, tkn).serialized)
+                return { serialized: '['+mappedChildren.join(', ')+']', token: tkn }
+              }
+              // regular object
+              const entries = []
+              for (let prop in value) {
+                entries.push('"'+prop+'": '+__unmarshalValue(value[prop], tkn).serialized)
+              }
+              return { serialized: '{'+entries.join(', ')+'}', token: tkn }
+            }
+            const valueId = __generateRandomId()
+            __valueCache.set(valueId, value)
+            if (valueType === 'function') {
+              // TODO add "this" scoping support
+              return { serialized: '{"type": "function", "'+tkn+'": "'+valueId+'"}', token: tkn }
+            }
+            return { serialized: '{"type": "cache", "'+tkn+'": "'+valueId+'"}', token: tkn }
+          }
+        `)
+    ).consume((unmarshal) => vm.setProp(vm.global, '__unmarshalValue', unmarshal))
   }
 }

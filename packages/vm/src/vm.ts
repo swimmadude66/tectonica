@@ -45,10 +45,14 @@ export class VM {
 
     this.marshaller.init(vm)
 
+    // TODO: register stdlibs
+    this.registerVMGlobal('console', console)
+
     this.setReady(true)
   }
 
   async teardown() {
+    this.setReady(false)
     this.vm?.dispose()
     this.vm = undefined
     this.runtime?.dispose()
@@ -77,6 +81,15 @@ export class VM {
       resolve: readyResolve!,
     }
     return readyPromise
+  }
+
+  registerVMGlobal(key: string, val: any) {
+    if (!this.vm) {
+      throw new Error('VM not initialized')
+    }
+    this.marshaller.marshal(val).consume((v) => {
+      this.vm!.setProp(this.vm!.global, key, v)
+    })
   }
 
   private setReady(ready: boolean) {

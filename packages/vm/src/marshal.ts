@@ -28,7 +28,7 @@ export class Marshaller {
     this._initHelpers(vm)
   }
 
-  getVM(): QuickJSContext {
+  requireVM(): QuickJSContext {
     if (!this.vm?.alive) {
       throw new Error('VM not initialized')
     }
@@ -36,7 +36,7 @@ export class Marshaller {
   }
 
   marshal(value: any): QuickJSHandle {
-    const vm = this.getVM()
+    const vm = this.requireVM()
     if (value === null) {
       return vm.null
     }
@@ -62,22 +62,23 @@ export class Marshaller {
     }
     if (valueType === 'symbol') {
       const symbolHandle = vm.newSymbolFor(value)
-      this._handleCache.set(value, symbolHandle)
       return symbolHandle
     }
 
     const serializedValue = this.serializeJSValue(value)
     const serialHandle = vm.newString(serializedValue.serialized)
     const tokenHandle = vm.newString(serializedValue.token)
-    const handle = vm.unwrapResult(vm.callFunction(vm.getProp(vm.global, '__marshalValue'), vm.global, serialHandle, tokenHandle))
+    const marshalerHandle = vm.getProp(vm.global, '__marshalValue')
+    const handle = vm.unwrapResult(vm.callFunction(marshalerHandle, vm.global, serialHandle, tokenHandle))
     serialHandle.dispose()
     tokenHandle.dispose()
+    marshalerHandle.dispose()
     this._handleCache.set(value, handle)
     return handle
   }
 
   unmarshal(handle: QuickJSHandle): any {
-    const vm = this.getVM()
+    const vm = this.requireVM()
     const handleType = vm.typeof(handle)
     if (handleType === 'undefined') {
       return undefined
@@ -88,9 +89,6 @@ export class Marshaller {
     if (handleType === 'number') {
       return vm.getNumber(handle)
     }
-    if (handleType === 'symbol') {
-      return vm.getSymbol(handle)
-    }
     // boolean, bigint, and others need more care
     const serializer = vm.getProp(vm.global, '__unmarshalValue')
     const serialObjHandle = vm.unwrapResult(vm.callFunction(serializer, vm.global, handle))
@@ -98,9 +96,10 @@ export class Marshaller {
     const tokenHandle = vm.getProp(serialObjHandle, 'token')
     const serial = vm.getString(serialHandle)
     const token = vm.getString(tokenHandle)
+    serializer.dispose()
+    serialObjHandle.dispose()
     serialHandle.dispose()
     tokenHandle.dispose()
-    serialObjHandle.dispose()
     return this.deserializeVMValue(serial, token, true)
   }
 
@@ -212,7 +211,7 @@ export class Marshaller {
   }
 
   private _getVMCachedPromise(cacheId: string) {
-    const vm = this.getVM()
+    const vm = this.requireVM()
     const promiseGetter = vm.getProp(vm.global, '__vmCachedPromiseGetter')
     const cacheIdHandle = vm.newString(cacheId)
     const cachedPromiseHandle = vm.unwrapResult(vm.callFunction(promiseGetter, vm.global, cacheIdHandle))
@@ -230,7 +229,7 @@ export class Marshaller {
   }
 
   private _getVMCacheItemKey(cacheId: string, key: string | symbol): any {
-    const vm = this.getVM()
+    const vm = this.requireVM()
     const getter = vm.getProp(vm.global, '__vmCacheGetter')
     const cacheIdHandle = vm.newString(cacheId)
     const keyHandle = this.marshal(key)
@@ -244,7 +243,7 @@ export class Marshaller {
   }
 
   private _setVMCacheItemKey(cacheId: string, key: string | symbol, newVal: any): any {
-    const vm = this.getVM()
+    const vm = this.requireVM()
     const setter = vm.getProp(vm.global, '__vmCacheSetter')
     const cacheIdHandle = vm.newString(cacheId)
     const keyHandle = this.marshal(key)
@@ -260,7 +259,7 @@ export class Marshaller {
   }
 
   private _callVMCacheItem(cacheId: string, args: any[], _this?: any): any {
-    const vm = this.getVM()
+    const vm = this.requireVM()
     const caller = vm.getProp(vm.global, '__vmCacheCaller')
     const cacheIdHandle = vm.newString(cacheId)
     const argArrayHandle = this.marshal(args)
@@ -275,9 +274,7 @@ export class Marshaller {
 
   private _initHelpers(vm: QuickJSContext) {
     vm.unwrapResult(vm.evalCode(`new Map()`)).consume((cache) => vm.setProp(vm.global, '__valueCache', cache))
-
     vm.newFunction('__generateRandomId', () => vm.newString(generateRandomId())).consume((generator) => vm.setProp(vm.global, '__generateRandomId', generator))
-
     vm.unwrapResult(
       vm.evalCode(`(cacheId) => {
       const cachedPromise = __valueCache.get(cacheId)
@@ -287,9 +284,7 @@ export class Marshaller {
       return cachedPromise
     }`)
     ).consume((promiseGetter) => vm.setProp(vm.global, '__vmCachedPromiseGetter', promiseGetter))
-
     vm.unwrapResult(vm.evalCode(`(cacheId, key) => __valueCache.get(cacheId)?.[key]`)).consume((getter) => vm.setProp(vm.global, '__vmCacheGetter', getter))
-
     vm.unwrapResult(
       vm.evalCode(`(cacheId, key, val) => {
         const cachedItem = __valueCache.get(cacheId)
@@ -301,7 +296,6 @@ export class Marshaller {
       }
     `)
     ).consume((setter) => vm.setProp(vm.global, '__vmCacheSetter', setter))
-
     vm.unwrapResult(
       vm.evalCode(`
       (cacheId, argsArray) => {
@@ -313,9 +307,8 @@ export class Marshaller {
       }
     `)
     ).consume((caller) => vm.setProp(vm.global, '__vmCacheCaller', caller))
-
     vm.newFunction('__getCachedPromise', (cacheIdHandle) => {
-      const cacheId = vm.getString(cacheIdHandle)
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
       const cachedPromise = this.valueCache.get(cacheId)
       if (!cachedPromise) {
         throw new Error('No such promise')
@@ -324,7 +317,7 @@ export class Marshaller {
       cachedPromise.then(
         (results) => {
           this.marshal(results).consume((r) => {
-            vmPromise.resolve(this.marshal(r))
+            vmPromise.resolve(r)
           })
           return results
         },
@@ -338,33 +331,29 @@ export class Marshaller {
       vmPromise.settled.then(vm.runtime.executePendingJobs)
       return vmPromise.handle
     }).consume((promiseGetter) => vm.setProp(vm.global, '__getCachedPromise', promiseGetter))
-
     vm.newFunction('__getCacheItemGetter', (cacheIdHandle, keyHandle) => {
-      const cacheId = vm.getString(cacheIdHandle)
-      const key = vm.typeof(keyHandle) === 'symbol' ? vm.getSymbol(keyHandle) : vm.getString(keyHandle)
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const key = keyHandle.consume((kh) => (vm.typeof(kh) === 'symbol' ? vm.getSymbol(kh) : vm.getString(kh)))
       const cachedItem = this.valueCache.get(cacheId)
       return this.marshal(cachedItem[key])
     }).consume((getter) => vm.setProp(vm.global, '__getCacheItemKey', getter))
-
     vm.newFunction('__setCacheItemGetter', (cacheIdHandle, keyHandle, valHandle) => {
-      const cacheId = vm.getString(cacheIdHandle)
-      const key = vm.typeof(keyHandle) === 'symbol' ? vm.getSymbol(keyHandle) : vm.getString(keyHandle)
-      const val = this.unmarshal(valHandle)
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const key = keyHandle.consume((kh) => (vm.typeof(kh) === 'symbol' ? vm.getSymbol(kh) : vm.getString(kh)))
+      const val = valHandle.consume((vh) => this.unmarshal(vh))
       const cachedItem = this.valueCache.get(cacheId)
       cachedItem[key] = val
       return vm.true
     }).consume((setter) => vm.setProp(vm.global, '__setCacheItemKey', setter))
-
     vm.newFunction('__callCacheItemFunction', (cacheIdHandle, argsArrayHandle, thisHandle) => {
-      const cacheId = vm.getString(cacheIdHandle)
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
       const cachedItem = this.valueCache.get(cacheId)
-      const args = this.unmarshal(argsArrayHandle)
+      const args = argsArrayHandle.consume((ah) => this.unmarshal(ah))
       if (typeof cachedItem === 'function') {
         return this.marshal(cachedItem(...args))
       }
       return vm.undefined
     }).consume((caller) => vm.setProp(vm.global, '__callCacheItemFunction', caller))
-
     vm.unwrapResult(
       vm.evalCode(`(base, cacheId) => {
         return new Proxy(base, {
@@ -380,7 +369,6 @@ export class Marshaller {
         })
     }`)
     ).consume((proxyCreator) => vm.setProp(vm.global, '__createVMProxy', proxyCreator))
-
     vm.unwrapResult(
       vm.evalCode(`
           (valueString, token, json = true) => {
@@ -433,7 +421,6 @@ export class Marshaller {
           }
         `)
     ).consume((marshal) => vm.setProp(vm.global, '__marshalValue', marshal))
-
     vm.unwrapResult(
       vm.evalCode(`
           (value, tkn = __generateRandomId() ) => {

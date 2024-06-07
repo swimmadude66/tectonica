@@ -1,6 +1,6 @@
 import { expect } from 'chai'
 import { Marshaller } from '../src/marshal'
-import { VM } from '../src/vm'
+import { VMManager } from '../src/vm'
 
 describe('Marshaller service', () => {
   describe('serialize JS value', () => {
@@ -114,7 +114,7 @@ describe('Marshaller service', () => {
     })
 
     it('properly serializes nested object values', async () => {
-      const vm = new VM()
+      const vm = new VMManager()
       await vm.init()
       await vm.awaitReady()
       const marshaller = vm.marshaller
@@ -142,7 +142,7 @@ describe('Marshaller service', () => {
 
   describe('marshal and unmarshal', () => {
     it('can proxy functions', async () => {
-      const manager = new VM()
+      const manager = new VMManager()
       await manager.init()
       await manager.awaitReady()
       const marshaller = manager.marshaller
@@ -172,7 +172,7 @@ describe('Marshaller service', () => {
     })
 
     it('can reverse proxy functions', async () => {
-      const manager = new VM()
+      const manager = new VMManager()
       await manager.init()
       await manager.awaitReady()
       const marshaller = manager.marshaller
@@ -197,7 +197,7 @@ describe('Marshaller service', () => {
     })
 
     it('can marshal promises', async () => {
-      const manager = new VM()
+      const manager = new VMManager()
       await manager.init()
 
       const vm = manager.vm!
@@ -272,7 +272,7 @@ describe('Marshaller service', () => {
     })
 
     it('can unmarshal promises', async () => {
-      const manager = new VM()
+      const manager = new VMManager()
       await manager.init()
 
       const vm = manager.vm!

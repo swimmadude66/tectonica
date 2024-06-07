@@ -12,7 +12,7 @@ import {
 import { VMInitOpts } from './types'
 import { Marshaller } from './marshal'
 
-export class VM {
+export class VMManager {
   module?: QuickJSWASMModule
   runtime?: QuickJSRuntime
   vm?: QuickJSContext
@@ -83,13 +83,26 @@ export class VM {
     return readyPromise
   }
 
-  registerVMGlobal(key: string, val: any) {
-    if (!this.vm) {
-      throw new Error('VM not initialized')
+  requireVM(): QuickJSContext {
+    if (!this.vm?.alive) {
+      throw new Error('No VM initialized')
     }
+    return this.vm
+  }
+
+  registerVMGlobal(key: string, val: any) {
+    const vm = this.requireVM()
     this.marshaller.marshal(val).consume((v) => {
-      this.vm!.setProp(this.vm!.global, key, v)
+      vm.setProp(vm.global, key, v)
     })
+  }
+
+  eval(code: string): any {
+    const vm = this.requireVM()
+    const resultHandle = vm.unwrapResult(vm.evalCode(code))
+    const result = this.marshaller.unmarshal(resultHandle)
+    resultHandle.dispose()
+    return result
   }
 
   private setReady(ready: boolean) {

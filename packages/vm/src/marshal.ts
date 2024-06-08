@@ -1,4 +1,4 @@
-import type { QuickJSContext, QuickJSHandle } from 'quickjs-emscripten'
+import { Scope, type QuickJSContext, type QuickJSHandle } from 'quickjs-emscripten'
 
 const PRIMITIVE_TYPES = ['string', 'boolean', 'number']
 
@@ -61,18 +61,17 @@ export class Marshaller {
       return cachedHandle
     }
     if (valueType === 'symbol') {
-      const symbolHandle = vm.newSymbolFor(value)
+      const symbolHandle = vm.newSymbolFor((value as symbol).description ?? value)
       return symbolHandle
     }
 
     const serializedValue = this.serializeJSValue(value)
-    const serialHandle = vm.newString(serializedValue.serialized)
-    const tokenHandle = vm.newString(serializedValue.token)
-    const marshalerHandle = vm.getProp(vm.global, '__marshalValue')
+    const scope = new Scope()
+    const marshalerHandle = scope.manage(vm.getProp(vm.global, '__marshalValue'))
+    const serialHandle = scope.manage(vm.newString(serializedValue.serialized))
+    const tokenHandle = scope.manage(vm.newString(serializedValue.token))
     const handle = vm.unwrapResult(vm.callFunction(marshalerHandle, vm.global, serialHandle, tokenHandle))
-    serialHandle.dispose()
-    tokenHandle.dispose()
-    marshalerHandle.dispose()
+    scope.dispose()
     this._handleCache.set(value, handle)
     return handle
   }
@@ -90,16 +89,11 @@ export class Marshaller {
       return vm.getNumber(handle)
     }
     // boolean, bigint, and others need more care
-    const serializer = vm.getProp(vm.global, '__unmarshalValue')
-    const serialObjHandle = vm.unwrapResult(vm.callFunction(serializer, vm.global, handle))
-    const serialHandle = vm.getProp(serialObjHandle, 'serialized')
-    const tokenHandle = vm.getProp(serialObjHandle, 'token')
-    const serial = vm.getString(serialHandle)
-    const token = vm.getString(tokenHandle)
-    serializer.dispose()
+    const serialObjHandle = vm.getProp(vm.global, '__unmarshalValue').consume((serializer) => vm.unwrapResult(vm.callFunction(serializer, vm.global, handle)))
+    const serial = vm.getProp(serialObjHandle, 'serialized').consume((serialHandle) => vm.getString(serialHandle))
+    const token = vm.getProp(serialObjHandle, 'token').consume((tokenHandle) => vm.getString(tokenHandle))
     serialObjHandle.dispose()
-    serialHandle.dispose()
-    tokenHandle.dispose()
+
     return this.deserializeVMValue(serial, token, true)
   }
 
@@ -212,13 +206,12 @@ export class Marshaller {
 
   private _getVMCachedPromise(cacheId: string) {
     const vm = this.requireVM()
-    const promiseGetter = vm.getProp(vm.global, '__vmCachedPromiseGetter')
-    const cacheIdHandle = vm.newString(cacheId)
-    const cachedPromiseHandle = vm.unwrapResult(vm.callFunction(promiseGetter, vm.global, cacheIdHandle))
+    const scope = new Scope()
+    const promiseGetter = scope.manage(vm.getProp(vm.global, '__vmCachedPromiseGetter'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const cachedPromiseHandle = scope.manage(vm.unwrapResult(vm.callFunction(promiseGetter, vm.global, cacheIdHandle)))
     const nativePromise = vm.resolvePromise(cachedPromiseHandle)
-    promiseGetter.dispose()
-    cacheIdHandle.dispose()
-    cachedPromiseHandle.dispose()
+    scope.dispose()
     vm.runtime.executePendingJobs()
     return nativePromise.then((result) => {
       const resultHandle = vm.unwrapResult(result)
@@ -230,45 +223,38 @@ export class Marshaller {
 
   private _getVMCacheItemKey(cacheId: string, key: string | symbol): any {
     const vm = this.requireVM()
-    const getter = vm.getProp(vm.global, '__vmCacheGetter')
-    const cacheIdHandle = vm.newString(cacheId)
-    const keyHandle = this.marshal(key)
-    const returnValHandle = vm.unwrapResult(vm.callFunction(getter, vm.global, cacheIdHandle, keyHandle))
+    const scope = new Scope()
+    const getter = scope.manage(vm.getProp(vm.global, '__vmCacheGetter'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const keyHandle = scope.manage(this.marshal(key))
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(getter, vm.global, cacheIdHandle, keyHandle)))
     const jsVal = this.unmarshal(returnValHandle)
-    getter.dispose()
-    cacheIdHandle.dispose()
-    keyHandle.dispose()
-    returnValHandle.dispose()
+    scope.dispose()
     return jsVal
   }
 
   private _setVMCacheItemKey(cacheId: string, key: string | symbol, newVal: any): any {
     const vm = this.requireVM()
-    const setter = vm.getProp(vm.global, '__vmCacheSetter')
-    const cacheIdHandle = vm.newString(cacheId)
-    const keyHandle = this.marshal(key)
-    const newValHandle = this.marshal(newVal)
-    const returnValHandle = vm.unwrapResult(vm.callFunction(setter, vm.global, cacheIdHandle, keyHandle, newValHandle))
+    const scope = new Scope()
+    const setter = scope.manage(vm.getProp(vm.global, '__vmCacheSetter'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const keyHandle = scope.manage(this.marshal(key))
+    const newValHandle = scope.manage(this.marshal(newVal))
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(setter, vm.global, cacheIdHandle, keyHandle, newValHandle)))
     const jsVal = this.unmarshal(returnValHandle)
-    setter.dispose()
-    cacheIdHandle.dispose()
-    keyHandle.dispose()
-    newValHandle.dispose()
-    returnValHandle.dispose()
+    scope.dispose()
     return jsVal
   }
 
   private _callVMCacheItem(cacheId: string, args: any[], _this?: any): any {
     const vm = this.requireVM()
-    const caller = vm.getProp(vm.global, '__vmCacheCaller')
-    const cacheIdHandle = vm.newString(cacheId)
-    const argArrayHandle = this.marshal(args)
-    const returnValHandle = vm.unwrapResult(vm.callFunction(caller, vm.global, cacheIdHandle, argArrayHandle))
+    const scope = new Scope()
+    const caller = scope.manage(vm.getProp(vm.global, '__vmCacheCaller'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const argArrayHandle = scope.manage(this.marshal(args))
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(caller, vm.global, cacheIdHandle, argArrayHandle)))
     const jsVal = this.unmarshal(returnValHandle)
-    cacheIdHandle.dispose()
-    argArrayHandle.dispose()
-    returnValHandle.dispose()
-    caller.dispose()
+    scope.dispose()
     return jsVal
   }
 

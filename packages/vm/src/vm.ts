@@ -8,8 +8,12 @@ import {
   DEBUG_ASYNC,
   DEBUG_SYNC,
   newQuickJSAsyncWASMModuleFromVariant,
+  QuickJSVariant,
+  newVariant,
+  QuickJSAsyncVariant,
+  QuickJSSyncVariant,
 } from 'quickjs-emscripten'
-import { VMInitOpts } from './types'
+import { ModuleOptions, VMInitOpts } from './types'
 import { Marshaller } from './marshal'
 
 export class VMManager {
@@ -27,14 +31,13 @@ export class VMManager {
 
   constructor() {}
 
-  async init({ debug, async, runtimeOpts, contextOpts }: VMInitOpts = {}) {
+  async init({ debug, async, runtimeOpts, contextOpts, variant, variantOptions }: VMInitOpts = {}) {
     let module: QuickJSWASMModule | undefined
+    const moduleVariant = this.getVariant({ async, debug, variant, variantOptions })
     if (async) {
-      const variant = debug ? DEBUG_ASYNC : RELEASE_ASYNC
-      module = await newQuickJSAsyncWASMModuleFromVariant(variant)
+      module = await newQuickJSAsyncWASMModuleFromVariant(moduleVariant as any as QuickJSAsyncVariant)
     } else {
-      const variant = debug ? DEBUG_SYNC : RELEASE_SYNC
-      module = await newQuickJSWASMModuleFromVariant(variant)
+      module = await newQuickJSWASMModuleFromVariant(moduleVariant as any as QuickJSSyncVariant)
     }
     const runtime = module.newRuntime({ ...runtimeOpts })
     const vm = runtime.newContext({ ...contextOpts })
@@ -110,5 +113,20 @@ export class VMManager {
     if (ready) {
       this._readyPromise?.resolve?.()
     }
+  }
+
+  private getVariant({ debug, async, variant, variantOptions }: ModuleOptions): QuickJSVariant {
+    if (variant) {
+      return variant
+    }
+    if (async) {
+      variant = debug ? DEBUG_ASYNC : RELEASE_ASYNC
+    } else {
+      variant = debug ? DEBUG_SYNC : RELEASE_SYNC
+    }
+    if (variantOptions) {
+      variant = newVariant(variant, variantOptions) as QuickJSVariant
+    }
+    return variant
   }
 }

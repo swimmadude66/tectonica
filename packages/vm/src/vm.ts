@@ -1,17 +1,17 @@
 import {
-  QuickJSContext,
-  QuickJSRuntime,
-  QuickJSWASMModule,
+  type QuickJSContext,
+  type QuickJSRuntime,
+  type QuickJSWASMModule,
   RELEASE_SYNC,
   newQuickJSWASMModuleFromVariant,
   RELEASE_ASYNC,
   DEBUG_ASYNC,
   DEBUG_SYNC,
   newQuickJSAsyncWASMModuleFromVariant,
-  QuickJSVariant,
+  type QuickJSVariant,
   newVariant,
-  QuickJSAsyncVariant,
-  QuickJSSyncVariant,
+  type QuickJSAsyncVariant,
+  type QuickJSSyncVariant,
 } from 'quickjs-emscripten'
 import { ModuleOptions, VMInitOpts } from './types'
 import { Marshaller } from './marshal'

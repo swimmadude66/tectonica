@@ -24,8 +24,13 @@ export class Marshaller {
   }
 
   init(vm: QuickJSContext) {
-    this.vm = vm
-    this._initHelpers(vm)
+    const isolatedVM = vm.runtime.newContext()
+    this.vm = isolatedVM
+    this._initHelpers(isolatedVM)
+  }
+
+  teardown() {
+    this.vm?.dispose()
   }
 
   requireVM(): QuickJSContext {

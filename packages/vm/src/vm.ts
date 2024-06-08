@@ -56,6 +56,7 @@ export class VMManager {
 
   async teardown() {
     this.setReady(false)
+    this.marshaller.teardown()
     this.vm?.dispose()
     this.vm = undefined
     this.runtime?.dispose()

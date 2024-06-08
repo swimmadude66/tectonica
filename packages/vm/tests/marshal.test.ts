@@ -112,39 +112,21 @@ describe('Marshaller service', () => {
       expect(parsedSerial['object']['func']).to.have.keys(['type', token])
       expect(parsedSerial['object']['symbol']).to.have.keys(['type', token])
     })
-
-    it('properly serializes nested object values', async () => {
-      const vm = new VMManager()
-      await vm.init()
-      await vm.awaitReady()
-      const marshaller = vm.marshaller
-
-      const jsValue = {
-        bool: true,
-        num: 1,
-        string: 'hello',
-        func: () => 'hello',
-        symbol: Symbol('hello'),
-        object: { bool: true, num: 1, string: 'hello', func: () => 'hello', symbol: Symbol('hello') },
-      }
-      const { serialized, token } = marshaller.serializeJSValue(jsValue)
-      expect(serialized).to.be.a.string
-      expect(token).to.be.a.string
-      const parsedSerial = JSON.parse(serialized)
-      expect(parsedSerial).to.have.keys(Object.keys(jsValue))
-      expect(parsedSerial['func']).to.have.keys(['type', token])
-      expect(parsedSerial['symbol']).to.have.keys(['type', token])
-      expect(parsedSerial['object']).to.have.keys(Object.keys(jsValue).filter((k) => k !== 'object'))
-      expect(parsedSerial['object']['func']).to.have.keys(['type', token])
-      expect(parsedSerial['object']['symbol']).to.have.keys(['type', token])
-    })
   })
 
   describe('marshal and unmarshal', () => {
-    it('can proxy functions', async () => {
-      const manager = new VMManager()
+    const manager = new VMManager()
+
+    beforeEach(async () => {
       await manager.init()
       await manager.awaitReady()
+    })
+
+    afterEach(async () => {
+      await manager.teardown()
+    })
+
+    it('can proxy functions', async () => {
       const marshaller = manager.marshaller
       const vm = manager.vm!
 
@@ -154,7 +136,7 @@ describe('Marshaller service', () => {
       }
       const vmFunc = marshaller.marshal(increment)
       vmFunc.consume((vf) => {
-        vm.setProp(vm.global, '__incrementTest', vf)
+        vm.defineProp(vm.global, '__incrementTest', { value: vf })
         // call function
         const calledCount = vm.getNumber(vm.unwrapResult(vm.callFunction(vf, vm.global)))
         expect(callCount).to.equal(1)
@@ -172,9 +154,6 @@ describe('Marshaller service', () => {
     })
 
     it('can reverse proxy functions', async () => {
-      const manager = new VMManager()
-      await manager.init()
-      await manager.awaitReady()
       const marshaller = manager.marshaller
       const vm = manager.vm!
 
@@ -197,10 +176,7 @@ describe('Marshaller service', () => {
     })
 
     it('can marshal promises', async () => {
-      const manager = new VMManager()
-      await manager.init()
-
-      const vm = manager.vm!
+      const vm = manager.requireVM()
       return await new Promise((done) => {
         vm.unwrapResult(vm.evalCode(`({resolves: 0, rejects: 0, finallys: 0})`)).consume((counter) => vm.setProp(vm.global, '__counters', counter))
         const promiseListenerFunc = vm.unwrapResult(
@@ -220,22 +196,17 @@ describe('Marshaller service', () => {
         })
         const promise1Handle = manager.marshaller.marshal(promise1)
         vm.unwrapResult(vm.callFunction(promiseListenerFunc, vm.global, promise1Handle)).dispose()
+        promise1Handle.dispose()
 
         promise1.finally(() => {
           setTimeout(() => {
             const countersHandler = vm.getProp(vm.global, '__counters')
-            const resolvesHandle = vm.getProp(countersHandler, 'resolves')
-            const resolves = vm.getNumber(resolvesHandle)
+            const resolves = vm.getProp(countersHandler, 'resolves').consume((r) => vm.getNumber(r))
             expect(resolves).to.equal(1)
-            const rejectsHandle = vm.getProp(countersHandler, 'rejects')
-            const rejects = vm.getNumber(rejectsHandle)
+            const rejects = vm.getProp(countersHandler, 'rejects').consume((r) => vm.getNumber(r))
             expect(rejects).to.equal(0)
-            const finallyHandle = vm.getProp(countersHandler, 'finallys')
-            const finallys = vm.getNumber(finallyHandle)
+            const finallys = vm.getProp(countersHandler, 'finallys').consume((f) => vm.getNumber(f))
             expect(finallys).to.equal(1)
-            finallyHandle.dispose()
-            rejectsHandle.dispose()
-            resolvesHandle.dispose()
             countersHandler.dispose()
           }, 0)
         })
@@ -245,37 +216,34 @@ describe('Marshaller service', () => {
         })
         const promise2Handle = manager.marshaller.marshal(promise2)
         vm.unwrapResult(vm.callFunction(promiseListenerFunc, vm.global, promise2Handle)).dispose()
+        promise2Handle.dispose()
 
         promise2.finally(() => {
           setTimeout(() => {
             const countersHandler = vm.getProp(vm.global, '__counters')
-            const resolvesHandle = vm.getProp(countersHandler, 'resolves')
-            const resolves = vm.getNumber(resolvesHandle)
+            const resolves = vm.getProp(countersHandler, 'resolves').consume((r) => vm.getNumber(r))
             expect(resolves).to.equal(1)
-            const rejectsHandle = vm.getProp(countersHandler, 'rejects')
-            const rejects = vm.getNumber(rejectsHandle)
+            const rejects = vm.getProp(countersHandler, 'rejects').consume((r) => vm.getNumber(r))
             expect(rejects).to.equal(1)
-            const finallyHandle = vm.getProp(countersHandler, 'finallys')
-            const finallys = vm.getNumber(finallyHandle)
+            const finallys = vm.getProp(countersHandler, 'finallys').consume((f) => vm.getNumber(f))
             expect(finallys).to.equal(2)
-            finallyHandle.dispose()
-            rejectsHandle.dispose()
-            resolvesHandle.dispose()
+
             countersHandler.dispose()
           }, 0)
         })
 
         Promise.allSettled([promise1, promise2]).finally(() => {
-          setTimeout(() => done(), 0)
+          setTimeout(() => {
+            promiseListenerFunc.dispose()
+
+            done()
+          }, 0)
         })
       })
     })
 
     it('can unmarshal promises', async () => {
-      const manager = new VMManager()
-      await manager.init()
-
-      const vm = manager.vm!
+      const vm = manager.requireVM()
 
       const promiseFunc = vm.unwrapResult(
         vm.evalCode(`(shouldResolve, data) => {
@@ -288,20 +256,30 @@ describe('Marshaller service', () => {
           })
         }`)
       )
-
-      const promise1Handle = vm.unwrapResult(vm.callFunction(promiseFunc, vm.global, vm.true, vm.newNumber(6)))
+      const booleanArgHandle1 = vm.true
+      const numberArgHandle1 = vm.newNumber(6)
+      const promise1Handle = vm.unwrapResult(vm.callFunction(promiseFunc, vm.global, booleanArgHandle1, numberArgHandle1))
       const promise1 = manager.marshaller.unmarshal(promise1Handle) as Promise<number>
+      promise1Handle.dispose()
+      booleanArgHandle1.dispose()
+      numberArgHandle1.dispose()
       const results = await promise1
       expect(results).to.equal(6)
-      const promise2Handle = vm.unwrapResult(vm.callFunction(promiseFunc, vm.global, vm.false, vm.newNumber(6)))
+      const booleanArgHandle2 = vm.false
+      const numberArgHandle2 = vm.newNumber(42)
+      const promise2Handle = vm.unwrapResult(vm.callFunction(promiseFunc, vm.global, booleanArgHandle2, numberArgHandle2))
       const promise2 = manager.marshaller.unmarshal(promise2Handle) as Promise<number>
+      promise2Handle.dispose()
+      booleanArgHandle2.dispose()
+      numberArgHandle2.dispose()
       try {
         await promise2
       } catch (reason) {
         expect(reason).not.to.be.null
-        expect(reason!['cause']).to.equal(6)
+        expect(reason!['cause']).to.equal(42)
+      } finally {
+        promiseFunc.dispose()
       }
-      promiseFunc.dispose()
     })
   })
 })

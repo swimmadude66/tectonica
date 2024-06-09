@@ -13,7 +13,6 @@ function generateMagicToken({ prefix, suffix }: { prefix?: string; suffix?: stri
 }
 
 export class Marshaller {
-  private _handleCache = new WeakMap<any, QuickJSHandle>()
   valueCache = new Map<string, any>()
 
   constructor(private vm?: QuickJSContext) {
@@ -26,6 +25,18 @@ export class Marshaller {
   init(vm: QuickJSContext) {
     const isolatedVM = vm.runtime.newContext()
     this.vm = isolatedVM
+
+    // debug console stdlib
+    // isolatedVM.newObject().consume((c) => {
+    //   isolatedVM
+    //     .newFunction('log', (...argsHandles) => {
+    //       const args = argsHandles.map((a) => isolatedVM.dump(a))
+    //       console.log(...args)
+    //     })
+    //     .consume((l) => isolatedVM.setProp(c, 'log', l))
+    //   isolatedVM.setProp(isolatedVM.global, 'console', c)
+    // })
+
     this._initHelpers(isolatedVM)
   }
 
@@ -40,7 +51,7 @@ export class Marshaller {
     return this.vm
   }
 
-  marshal(value: any): QuickJSHandle {
+  marshal(value: any, parentCacheId?: string): QuickJSHandle {
     const vm = this.requireVM()
     if (value === null) {
       return vm.null
@@ -61,23 +72,18 @@ export class Marshaller {
     if (valueType === 'bigint') {
       return vm.newBigInt(value)
     }
-    const cachedHandle = this._handleCache.get(value)
-    if (cachedHandle?.alive) {
-      return cachedHandle
-    }
     if (valueType === 'symbol') {
       const symbolHandle = vm.newSymbolFor((value as symbol).description ?? value)
       return symbolHandle
     }
 
-    const serializedValue = this.serializeJSValue(value)
+    const serializedValue = this.serializeJSValue(value, undefined, parentCacheId)
     const scope = new Scope()
     const marshalerHandle = scope.manage(vm.getProp(vm.global, '__marshalValue'))
     const serialHandle = scope.manage(vm.newString(serializedValue.serialized))
     const tokenHandle = scope.manage(vm.newString(serializedValue.token))
     const handle = vm.unwrapResult(vm.callFunction(marshalerHandle, vm.global, serialHandle, tokenHandle))
     scope.dispose()
-    this._handleCache.set(value, handle)
     return handle
   }
 
@@ -98,11 +104,10 @@ export class Marshaller {
     const serial = vm.getProp(serialObjHandle, 'serialized').consume((serialHandle) => vm.getString(serialHandle))
     const token = vm.getProp(serialObjHandle, 'token').consume((tokenHandle) => vm.getString(tokenHandle))
     serialObjHandle.dispose()
-
     return this.deserializeVMValue(serial, token, true)
   }
 
-  serializeJSValue(value: any, magicToken?: string): { serialized: string; token: string } {
+  serializeJSValue(value: any, magicToken?: string, parentCacheId?: string): { serialized: string; token: string } {
     const tkn = magicToken ?? generateMagicToken()
     const valueType = typeof value
     if (PRIMITIVE_TYPES.includes(valueType)) {
@@ -117,39 +122,44 @@ export class Marshaller {
     if (valueType === 'symbol') {
       return { serialized: `{"type": "symbol", "${tkn}": "${Symbol.keyFor(value) ?? value.description}"}`, token: tkn }
     }
+    const valueId = generateRandomId()
     if (valueType === 'object') {
       if (value === null) {
-        return { serialized: `{"type": "null", "${tkn}": true}`, token: tkn }
+        return { serialized: `null`, token: tkn }
+      }
+      if (value instanceof Date) {
+        return { serialized: `{"type": "date", "${tkn}": ${value.valueOf()}}`, token: tkn }
       }
       if (Array.isArray(value)) {
         const mappedChildren = value.map((child) => this.serializeJSValue(child, tkn).serialized)
         return { serialized: `[${mappedChildren.join(', ')}]`, token: tkn }
       }
       if (value instanceof Promise || 'then' in value) {
-        const valueId = generateRandomId()
         this.valueCache.set(valueId, value)
         return { serialized: `{"type": "promise", "${tkn}": "${valueId}"}`, token: tkn }
       }
       // object
       const entries: string[] = []
       for (const prop in value) {
-        entries.push(`"${prop}": ${this.serializeJSValue(value[prop], tkn).serialized}`)
+        entries.push(`"${prop}": ${this.serializeJSValue(value[prop], tkn, valueId).serialized}`)
       }
-      return { serialized: `{${entries.join(', ')}}`, token: tkn }
+      this.valueCache.set(valueId, value)
+      return { serialized: `{"type": "object", "${tkn}": "${valueId}", "children": {${entries.join(', ')}} }`, token: tkn }
     }
-    const valueId = generateRandomId()
     this.valueCache.set(valueId, value)
     if (valueType === 'function') {
-      // TODO add "this" scoping support
-      return { serialized: `{"type": "function", "${tkn}": "${valueId}"}`, token: tkn }
+      return { serialized: `{"type": "function", "${tkn}": "${valueId}"${parentCacheId ? `, "parentCacheId": "${parentCacheId}"` : ''}}`, token: tkn }
     }
     return { serialized: `{"type": "cache", "${tkn}": "${valueId}"}`, token: tkn }
   }
 
-  deserializeVMValue(serialized: string, token: string, json: boolean = true): any {
+  deserializeVMValue(serialized: string, token: string, json: boolean = true, parentCacheId?: string): any {
     const val = json ? JSON.parse(serialized) : serialized
     const valType = typeof val
     if (valType === 'object') {
+      if (val === null) {
+        return null
+      }
       if (Array.isArray(val)) {
         const parsedVal: any[] = []
         // handle array
@@ -173,11 +183,23 @@ export class Marshaller {
           case 'symbol': {
             return Symbol.for(val[token])
           }
+          case 'date': {
+            return new Date(val[token])
+          }
           case 'promise': {
             return this._getVMCachedPromise(val[token])
           }
           case 'function': {
-            return this._createVMProxy(() => void 0, val[token])
+            const parentId = val.parentCacheId ?? parentCacheId
+            return this._createVMProxy(function proxyBase() {}, val[token], parentId)
+          }
+          case 'object': {
+            const children = val.children ?? {}
+            const parsedVal = {}
+            for (const key in children) {
+              parsedVal[key] = this.deserializeVMValue(children[key], token, false, val[token])
+            }
+            return parsedVal
           }
           case 'cache':
           default: {
@@ -195,7 +217,7 @@ export class Marshaller {
     return val
   }
 
-  private _createVMProxy(base: any, cacheId: string) {
+  private _createVMProxy(base: any, cacheId: string, parentId?: string) {
     return new Proxy(base, {
       get: (_target, key) => {
         return this._getVMCacheItemKey(cacheId, key)
@@ -204,7 +226,11 @@ export class Marshaller {
         return this._setVMCacheItemKey(cacheId, key, newValue)
       },
       apply: (_target, thisArg, argArray) => {
-        return this._callVMCacheItem(cacheId, argArray, thisArg)
+        return this._callVMCacheItem(cacheId, argArray, parentId)
+      },
+      construct: (_target, argArray, newTarget) => {
+        console.log('constructing host class from vm', cacheId, this.valueCache.get(cacheId))
+        return this._constructVMCacheItem(cacheId, argArray)
       },
     })
   }
@@ -219,9 +245,7 @@ export class Marshaller {
     scope.dispose()
     vm.runtime.executePendingJobs()
     return nativePromise.then((result) => {
-      const resultHandle = vm.unwrapResult(result)
-      const jsVal = this.unmarshal(resultHandle)
-      resultHandle.dispose()
+      const jsVal = vm.unwrapResult(result).consume((resultHandle) => this.unmarshal(resultHandle))
       return jsVal
     })
   }
@@ -251,13 +275,29 @@ export class Marshaller {
     return jsVal
   }
 
-  private _callVMCacheItem(cacheId: string, args: any[], _this?: any): any {
+  private _callVMCacheItem(cacheId: string, args: any[], thisId?: string): any {
     const vm = this.requireVM()
     const scope = new Scope()
     const caller = scope.manage(vm.getProp(vm.global, '__vmCacheCaller'))
     const cacheIdHandle = scope.manage(vm.newString(cacheId))
     const argArrayHandle = scope.manage(this.marshal(args))
-    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(caller, vm.global, cacheIdHandle, argArrayHandle)))
+    const thisIdHandle = scope.manage(this.marshal(thisId))
+    try {
+      const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(caller, vm.global, cacheIdHandle, argArrayHandle, thisIdHandle)))
+      const jsVal = this.unmarshal(returnValHandle)
+      return jsVal
+    } finally {
+      scope.dispose()
+    }
+  }
+
+  private _constructVMCacheItem(cacheId: string, args: any[], thisId?: string): any {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const constructor = scope.manage(vm.getProp(vm.global, '__vmCacheConstructor'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const argArrayHandle = scope.manage(this.marshal(args))
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(constructor, vm.global, cacheIdHandle, argArrayHandle)))
     const jsVal = this.unmarshal(returnValHandle)
     scope.dispose()
     return jsVal
@@ -289,15 +329,24 @@ export class Marshaller {
     ).consume((setter) => vm.setProp(vm.global, '__vmCacheSetter', setter))
     vm.unwrapResult(
       vm.evalCode(`
-      (cacheId, argsArray) => {
+      (cacheId, argsArray, thisId) => {
         const cachedFunc = __valueCache.get(cacheId)
         if (typeof cachedFunc === 'function') {
-          return cachedFunc(...argsArray)
+          const that = thisId ? __valueCache.get(thisId) : undefined
+          return cachedFunc.apply(that ?? globalThis, argsArray)
         }
         throw new Error('Not a function')
       }
     `)
     ).consume((caller) => vm.setProp(vm.global, '__vmCacheCaller', caller))
+    vm.unwrapResult(
+      vm.evalCode(`
+      (cacheId, argsArray) => {
+        const cachedFunc = __valueCache.get(cacheId)
+        return new cachedFun(...argsArray)
+      }
+    `)
+    ).consume((caller) => vm.setProp(vm.global, '__vmCacheConstructor', caller))
     vm.newFunction('__getCachedPromise', (cacheIdHandle) => {
       const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
       const cachedPromise = this.valueCache.get(cacheId)
@@ -322,13 +371,13 @@ export class Marshaller {
       vmPromise.settled.then(vm.runtime.executePendingJobs)
       return vmPromise.handle
     }).consume((promiseGetter) => vm.setProp(vm.global, '__getCachedPromise', promiseGetter))
-    vm.newFunction('__getCacheItemGetter', (cacheIdHandle, keyHandle) => {
+    vm.newFunction('__getCacheItemKey', (cacheIdHandle, keyHandle) => {
       const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
       const key = keyHandle.consume((kh) => (vm.typeof(kh) === 'symbol' ? vm.getSymbol(kh) : vm.getString(kh)))
       const cachedItem = this.valueCache.get(cacheId)
-      return this.marshal(cachedItem[key])
+      return this.marshal(cachedItem[key], cacheId)
     }).consume((getter) => vm.setProp(vm.global, '__getCacheItemKey', getter))
-    vm.newFunction('__setCacheItemGetter', (cacheIdHandle, keyHandle, valHandle) => {
+    vm.newFunction('__setCacheItemKey', (cacheIdHandle, keyHandle, valHandle) => {
       const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
       const key = keyHandle.consume((kh) => (vm.typeof(kh) === 'symbol' ? vm.getSymbol(kh) : vm.getString(kh)))
       const val = valHandle.consume((vh) => this.unmarshal(vh))
@@ -336,17 +385,33 @@ export class Marshaller {
       cachedItem[key] = val
       return vm.true
     }).consume((setter) => vm.setProp(vm.global, '__setCacheItemKey', setter))
-    vm.newFunction('__callCacheItemFunction', (cacheIdHandle, argsArrayHandle, thisHandle) => {
+    vm.newFunction('__callCacheItemFunction', (cacheIdHandle, argsArrayHandle, thisCacheIdHandle) => {
       const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const thisId = thisCacheIdHandle.consume((idHandle) => this.unmarshal(idHandle)) // must handle undefined
       const cachedItem = this.valueCache.get(cacheId)
       const args = argsArrayHandle.consume((ah) => this.unmarshal(ah))
       if (typeof cachedItem === 'function') {
+        if (thisId) {
+          const that = this.valueCache.get(thisId)
+          if (that) {
+            const result = cachedItem.apply(that, args)
+            return this.marshal(result)
+          }
+        }
         return this.marshal(cachedItem(...args))
       }
-      return vm.undefined
+      throw new Error('not a function')
     }).consume((caller) => vm.setProp(vm.global, '__callCacheItemFunction', caller))
+    vm.newFunction('__constructCacheItem', (cacheIdHandle, argsArrayHandle) => {
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const cachedItem = this.valueCache.get(cacheId)
+      const args = argsArrayHandle.consume((ah) => this.unmarshal(ah))
+      const constructed = new cachedItem(...args)
+      return this.marshal(constructed)
+    }).consume((caller) => vm.setProp(vm.global, '__constructCacheItem', caller))
+
     vm.unwrapResult(
-      vm.evalCode(`(base, cacheId) => {
+      vm.evalCode(`(base, cacheId, parentCacheId) => {
         return new Proxy(base, {
           get: (_target, key) => {
             return __getCacheItemKey(cacheId, key)
@@ -355,17 +420,23 @@ export class Marshaller {
             return __setCacheItemKey(cacheId, key, newValue)
           },
           apply: (_target, thisArg, argArray) => {
-            return __callCacheItemFunction(cacheId, argArray, thisArg)
+            return __callCacheItemFunction(cacheId, argArray, parentCacheId ?? thisArg)
+          },
+          construct: (_target, argArray) => {
+            return __constructCacheItem(cacheId, argArray)
           }
         })
     }`)
     ).consume((proxyCreator) => vm.setProp(vm.global, '__createVMProxy', proxyCreator))
     vm.unwrapResult(
       vm.evalCode(`
-          (valueString, token, json = true) => {
+          (valueString, token, json = true, parentCacheId) => {
             const val = json ? JSON.parse(valueString) : valueString
             const valType = typeof val
             if (valType === 'object') {
+              if (val === null) {
+                return null
+              }
               if (Array.isArray(val)) {
                 const parsedVal = []
                 // handle array
@@ -389,11 +460,23 @@ export class Marshaller {
                   case 'symbol': {
                     return Symbol.for(val[token])
                   }
+                  case 'date': {
+                    return new Date(val[token])
+                  }
                   case 'promise': {
                     return __getCachedPromise(val[token])
                   }
                   case 'function': {
-                    return __createVMProxy(() => void 0, val[token])
+                    const parentId = val.parentCacheId ?? parentCacheId
+                    return __createVMProxy(function proxyBase(){}, val[token], parentId)
+                  }
+                  case 'object': {
+                    const parsedVal = {}
+                    const children = val.children ?? {}
+                    for (const key in children) {
+                      parsedVal[key] = __marshalValue(children[key], token, false, val[token])
+                    }
+                    return parsedVal
                   }
                   case 'cache':
                   default: {
@@ -404,7 +487,7 @@ export class Marshaller {
               // handle regular object
               const parsedVal = {}
               for (const key in val) {
-                parsedVal[key] = __marshalValue(val[key], token, false)
+                parsedVal[key] = __marshalValue(val[key], token, false, parsedVal)
               }
               return parsedVal
             }
@@ -414,7 +497,7 @@ export class Marshaller {
     ).consume((marshal) => vm.setProp(vm.global, '__marshalValue', marshal))
     vm.unwrapResult(
       vm.evalCode(`
-          (value, tkn = __generateRandomId() ) => {
+          (value, tkn = __generateRandomId(), parentCacheId ) => {
             const valueType = typeof value
             if (['string', 'number', 'boolean'].includes(valueType)) {
               return { serialized: JSON.stringify(value), token: tkn }
@@ -428,31 +511,33 @@ export class Marshaller {
             if (valueType === 'symbol') {
               return { serialized: '{"type": "symbol", "'+tkn+'": "'+(Symbol.keyFor(value) ?? value.description)+'"}', token: tkn }
             }
+            const valueId = __generateRandomId()
             if (valueType === 'object') {
               if (value === null) {
-                return { serialized: '{"type": "null", "'+tkn+'": true}', token: tkn }
+                return { serialized: 'null', token: tkn }
+              }
+              if (value instanceof Date) {
+                return { serialized: '{"type": "date", "'+tkn+'": '+value.valueOf()+'}', token: tkn}
               }
               if (Array.isArray(value)) {
                 const mappedChildren = value.map((child) => __unmarshalValue(child, tkn).serialized)
                 return { serialized: '['+mappedChildren.join(', ')+']', token: tkn }
               }
               if (value instanceof Promise || 'then' in value) {
-                const valueId = __generateRandomId()
                 __valueCache.set(valueId, value)
                 return { serialized: '{"type": "promise", "'+tkn+'": "'+valueId+'"}', token: tkn}
               }
               // regular object
+              __valueCache.set(valueId, value)
               const entries = []
               for (let prop in value) {
-                entries.push('"'+prop+'": '+__unmarshalValue(value[prop], tkn).serialized)
+                entries.push('"'+prop+'": '+__unmarshalValue(value[prop], tkn, valueId).serialized)
               }
-              return { serialized: '{'+entries.join(', ')+'}', token: tkn }
+              return { serialized: '{ "type": "object", "'+tkn+'": "'+valueId+'", "children": {'+entries.join(', ')+'}}', token: tkn }
             }
-            const valueId = __generateRandomId()
             __valueCache.set(valueId, value)
             if (valueType === 'function') {
-              // TODO add "this" scoping support
-              return { serialized: '{"type": "function", "'+tkn+'": "'+valueId+'"}', token: tkn }
+              return { serialized: '{"type": "function", "'+tkn+'": "'+valueId+'"' + (parentCacheId ? (', "parentCacheId": "' + parentCacheId + '"') : '') + '}', token: tkn }
             }
             return { serialized: '{"type": "cache", "'+tkn+'": "'+valueId+'"}', token: tkn }
           }

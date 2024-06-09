@@ -44,6 +44,19 @@ describe('Marshaller service', () => {
       expect(BigInt(data[token])).to.equal(bigint)
     })
 
+    it('propely serializes dates', () => {
+      const marshaller = new Marshaller()
+
+      const d = new Date()
+      const { serialized, token } = marshaller.serializeJSValue(d)
+      expect(serialized).to.be.a.string
+      expect(token).to.be.a.string
+      const data = JSON.parse(serialized)
+      expect(data).to.have.keys(['type', token])
+      expect(data.type).to.equal('date')
+      expect(data[token]).to.equal(d.valueOf())
+    })
+
     it('properly serializes values which must be cached', () => {
       const marshaller = new Marshaller()
 
@@ -68,9 +81,10 @@ describe('Marshaller service', () => {
       expect(serialized).to.be.a.string
       expect(token).to.be.a.string
       const parsedSerial = JSON.parse(serialized)
-      expect(parsedSerial).to.have.keys(Object.keys(jsValue))
-      expect(parsedSerial['func']).to.have.keys(['type', token])
-      expect(parsedSerial['symbol']).to.have.keys(['type', token])
+      expect(parsedSerial).to.have.keys(['type', token, 'children'])
+      expect(parsedSerial.children).to.have.keys(Object.keys(jsValue))
+      expect(parsedSerial.children['func']).to.have.keys(['type', token, 'parentCacheId'])
+      expect(parsedSerial.children['symbol']).to.have.keys(['type', token])
     })
 
     it('properly serializes object array values', () => {
@@ -82,12 +96,14 @@ describe('Marshaller service', () => {
       expect(token).to.be.a.string
       const parsedSerial = JSON.parse(serialized)
       expect(Array.isArray(parsedSerial)).to.be.true
-      expect(parsedSerial[0]).to.have.keys(Object.keys(jsValue))
-      expect(parsedSerial[0]['func']).to.have.keys(['type', token])
-      expect(parsedSerial[0]['symbol']).to.have.keys(['type', token])
-      expect(parsedSerial[1]).to.have.keys(Object.keys(jsValue))
-      expect(parsedSerial[1]['func']).to.have.keys(['type', token])
-      expect(parsedSerial[1]['symbol']).to.have.keys(['type', token])
+      expect(parsedSerial[0]).to.have.keys(['type', token, 'children'])
+      expect(parsedSerial[0].children).to.have.keys(Object.keys(jsValue))
+      expect(parsedSerial[0].children['func']).to.have.keys(['type', token, 'parentCacheId'])
+      expect(parsedSerial[0].children['symbol']).to.have.keys(['type', token])
+      expect(parsedSerial[1]).to.have.keys(['type', token, 'children'])
+      expect(parsedSerial[1].children).to.have.keys(Object.keys(jsValue))
+      expect(parsedSerial[1].children['func']).to.have.keys(['type', token, 'parentCacheId'])
+      expect(parsedSerial[1].children['symbol']).to.have.keys(['type', token])
     })
 
     it('properly serializes nested object values', () => {
@@ -105,12 +121,14 @@ describe('Marshaller service', () => {
       expect(serialized).to.be.a.string
       expect(token).to.be.a.string
       const parsedSerial = JSON.parse(serialized)
-      expect(parsedSerial).to.have.keys(Object.keys(jsValue))
-      expect(parsedSerial['func']).to.have.keys(['type', token])
-      expect(parsedSerial['symbol']).to.have.keys(['type', token])
-      expect(parsedSerial['object']).to.have.keys(Object.keys(jsValue).filter((k) => k !== 'object'))
-      expect(parsedSerial['object']['func']).to.have.keys(['type', token])
-      expect(parsedSerial['object']['symbol']).to.have.keys(['type', token])
+      expect(parsedSerial).to.have.keys(['type', token, 'children'])
+      expect(parsedSerial.children).to.have.keys(Object.keys(jsValue))
+      expect(parsedSerial.children['func']).to.have.keys(['type', token, 'parentCacheId'])
+      expect(parsedSerial.children['symbol']).to.have.keys(['type', token])
+      expect(parsedSerial.children['object']).to.have.keys(['type', token, 'children'])
+      expect(parsedSerial.children['object'].children).to.have.keys(Object.keys(jsValue).filter((k) => k !== 'object'))
+      expect(parsedSerial.children['object'].children['func']).to.have.keys(['type', token, 'parentCacheId'])
+      expect(parsedSerial.children['object'].children['symbol']).to.have.keys(['type', token])
     })
   })
 
@@ -280,6 +298,16 @@ describe('Marshaller service', () => {
       } finally {
         promiseFunc.dispose()
       }
+    })
+
+    it('can marshal classes', async () => {
+      manager.registerVMGlobal('dd', Date)
+      const now = Date.now()
+      const dateCheck = manager.eval(`
+        const m = new dd(${now})
+        m.valueOf()
+      `)
+      expect(dateCheck).to.equal(now)
     })
   })
 })

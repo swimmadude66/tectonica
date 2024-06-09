@@ -103,10 +103,14 @@ export class VMManager {
 
   eval(code: string): any {
     const vm = this.requireVM()
-    const resultHandle = vm.unwrapResult(vm.evalCode(code))
-    const result = this.marshaller.unmarshal(resultHandle)
-    resultHandle.dispose()
-    return result
+    let resultHandle
+    try {
+      resultHandle = vm.unwrapResult(vm.evalCode(code))
+      const result = this.marshaller.unmarshal(resultHandle)
+      return result
+    } finally {
+      resultHandle?.dispose()
+    }
   }
 
   private setReady(ready: boolean) {

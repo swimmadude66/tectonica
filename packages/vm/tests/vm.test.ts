@@ -99,5 +99,17 @@ describe('VMManager', () => {
       const counter = vm.eval('__counter')
       expect(counter).to.equal(1)
     })
+
+    it('can eval in limited scopes', () => {
+      vm.registerVMGlobal('greeting', 'hello')
+      vm.registerVMGlobal('parting', 'goodbye')
+
+      const result = vm.scopedEval(`'we say ' + greeting + ' and ' + parting`, { greeting: 'howdy', parting: 'peace' })
+      expect(result).to.be.a.string
+      expect(result).to.equal('we say howdy and peace')
+      const globalResult = vm.eval(`'we say ' + greeting + ' and ' + parting`)
+      expect(globalResult).to.be.a.string
+      expect(globalResult).to.equal('we say hello and goodbye')
+    })
   })
 })

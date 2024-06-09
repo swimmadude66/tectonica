@@ -12,6 +12,7 @@ import {
   newVariant,
   type QuickJSAsyncVariant,
   type QuickJSSyncVariant,
+  Scope,
 } from 'quickjs-emscripten'
 import { ModuleOptions, VMInitOpts } from './types'
 import { Marshaller } from './marshal'
@@ -110,6 +111,33 @@ export class VMManager {
       return result
     } finally {
       resultHandle?.dispose()
+    }
+  }
+
+  /**
+   * Run code with context variables, without registering those variables as globals. Allows for multiple evals to use the same variable names without collisions
+   * @param code code to eval with all context vars hoisted as variables
+   * @param contextVars these values will be hoisted to variables for the eval, accessible by their key
+   */
+  scopedEval(code: string, contextVars: Record<string, any>) {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const scopedFunc = scope.manage(
+      vm.unwrapResult(
+        vm.evalCode(`(contextArgs = {}) => {
+      {
+        const { ${Object.keys(contextVars).join(', ')} } = contextArgs
+        return (${code})
+      }
+    }`)
+      )
+    )
+    const contextHandle = scope.manage(this.marshaller.marshal(contextVars))
+    try {
+      const resultHandle = scope.manage(vm.unwrapResult(vm.callFunction(scopedFunc, vm.global, contextHandle)))
+      return this.marshaller.unmarshal(resultHandle)
+    } finally {
+      scope.dispose()
     }
   }
 

@@ -16,6 +16,7 @@ import {
 } from 'quickjs-emscripten'
 import { ModuleOptions, VMInitOpts } from './types'
 import { Marshaller } from './marshal'
+import { generateMagicToken } from './utils'
 
 export class VMManager {
   module?: QuickJSWASMModule
@@ -122,14 +123,15 @@ export class VMManager {
   scopedEval(code: string, contextVars: Record<string, any>) {
     const vm = this.requireVM()
     const scope = new Scope()
+    const scopeArgName = generateMagicToken({ prefix: '__context_args' })
     const scopedFunc = scope.manage(
       vm.unwrapResult(
-        vm.evalCode(`(contextArgs = {}) => {
-      {
-        const { ${Object.keys(contextVars).join(', ')} } = contextArgs
-        return (${code})
-      }
-    }`)
+        vm.evalCode(`(${scopeArgName} = {}) => {
+          {
+            const { ${Object.keys(contextVars).join(', ')} } = ${scopeArgName}
+            return (${code})
+          }
+        }`)
       )
     )
     const contextHandle = scope.manage(this.marshaller.marshal(contextVars))

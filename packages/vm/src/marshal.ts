@@ -1,16 +1,5 @@
 import { Scope, type QuickJSContext, type QuickJSHandle } from 'quickjs-emscripten'
-
-const PRIMITIVE_TYPES = ['string', 'boolean', 'number']
-
-function generateRandomId() {
-  const randomNum = Math.pow(10, 12) * Math.random()
-  const timedNum = performance.now()
-  return btoa(`${Math.floor(randomNum + timedNum)}`)
-}
-
-function generateMagicToken({ prefix, suffix }: { prefix?: string; suffix?: string } = {}) {
-  return `${prefix ?? ''}_${generateRandomId()}_${suffix ?? ''}`
-}
+import { PRIMITIVE_TYPES, generateMagicToken, generateRandomId } from './utils'
 
 export class Marshaller {
   valueCache = new Map<string, any>()

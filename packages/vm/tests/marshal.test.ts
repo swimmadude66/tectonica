@@ -81,10 +81,8 @@ describe('Marshaller service', () => {
       expect(serialized).to.be.a.string
       expect(token).to.be.a.string
       const parsedSerial = JSON.parse(serialized)
-      expect(parsedSerial).to.have.keys(['type', token, 'children'])
-      expect(parsedSerial.children).to.have.keys(Object.keys(jsValue))
-      expect(parsedSerial.children['func']).to.have.keys(['type', token, 'parentCacheId'])
-      expect(parsedSerial.children['symbol']).to.have.keys(['type', token])
+      expect(parsedSerial).to.have.keys(['type', token])
+      expect(marshaller.valueCache.get(parsedSerial[token])).to.equal(jsValue)
     })
 
     it('properly serializes object array values', () => {
@@ -96,14 +94,10 @@ describe('Marshaller service', () => {
       expect(token).to.be.a.string
       const parsedSerial = JSON.parse(serialized)
       expect(Array.isArray(parsedSerial)).to.be.true
-      expect(parsedSerial[0]).to.have.keys(['type', token, 'children'])
-      expect(parsedSerial[0].children).to.have.keys(Object.keys(jsValue))
-      expect(parsedSerial[0].children['func']).to.have.keys(['type', token, 'parentCacheId'])
-      expect(parsedSerial[0].children['symbol']).to.have.keys(['type', token])
-      expect(parsedSerial[1]).to.have.keys(['type', token, 'children'])
-      expect(parsedSerial[1].children).to.have.keys(Object.keys(jsValue))
-      expect(parsedSerial[1].children['func']).to.have.keys(['type', token, 'parentCacheId'])
-      expect(parsedSerial[1].children['symbol']).to.have.keys(['type', token])
+      expect(parsedSerial[0]).to.have.keys(['type', token])
+      expect(marshaller.valueCache.get(parsedSerial[0][token])).to.equal(jsValue)
+      expect(parsedSerial[1]).to.have.keys(['type', token])
+      expect(marshaller.valueCache.get(parsedSerial[1][token])).to.equal(jsValue)
     })
 
     it('properly serializes nested object values', () => {
@@ -121,14 +115,8 @@ describe('Marshaller service', () => {
       expect(serialized).to.be.a.string
       expect(token).to.be.a.string
       const parsedSerial = JSON.parse(serialized)
-      expect(parsedSerial).to.have.keys(['type', token, 'children'])
-      expect(parsedSerial.children).to.have.keys(Object.keys(jsValue))
-      expect(parsedSerial.children['func']).to.have.keys(['type', token, 'parentCacheId'])
-      expect(parsedSerial.children['symbol']).to.have.keys(['type', token])
-      expect(parsedSerial.children['object']).to.have.keys(['type', token, 'children'])
-      expect(parsedSerial.children['object'].children).to.have.keys(Object.keys(jsValue).filter((k) => k !== 'object'))
-      expect(parsedSerial.children['object'].children['func']).to.have.keys(['type', token, 'parentCacheId'])
-      expect(parsedSerial.children['object'].children['symbol']).to.have.keys(['type', token])
+      expect(parsedSerial).to.have.keys(['type', token])
+      expect(marshaller.valueCache.get(parsedSerial[token])).to.equal(jsValue)
     })
   })
 

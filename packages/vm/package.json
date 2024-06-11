@@ -1,6 +1,6 @@
 {
   "name": "@tectonica/vm",
-  "version": "0.0.7",
+  "version": "0.0.7-cached-object-test",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
   "exports": {

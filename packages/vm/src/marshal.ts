@@ -128,12 +128,8 @@ export class Marshaller {
         return { serialized: `{"type": "promise", "${tkn}": "${valueId}"}`, token: tkn }
       }
       // object
-      const entries: string[] = []
-      for (const prop in value) {
-        entries.push(`"${prop}": ${this.serializeJSValue(value[prop], tkn, valueId).serialized}`)
-      }
       this.valueCache.set(valueId, value)
-      return { serialized: `{"type": "object", "${tkn}": "${valueId}", "children": {${entries.join(', ')}} }`, token: tkn }
+      return { serialized: `{"type": "object", "${tkn}": "${valueId}"}`, token: tkn }
     }
     this.valueCache.set(valueId, value)
     if (valueType === 'function') {
@@ -183,12 +179,7 @@ export class Marshaller {
             return this._createVMProxy(function proxyBase() {}, val[token], parentId)
           }
           case 'object': {
-            const children = val.children ?? {}
-            const parsedVal = {}
-            for (const key in children) {
-              parsedVal[key] = this.deserializeVMValue(children[key], token, false, val[token])
-            }
-            return parsedVal
+            return this._createVMProxy({}, val[token])
           }
           case 'cache':
           default: {
@@ -460,12 +451,7 @@ export class Marshaller {
                     return __createVMProxy(function proxyBase(){}, val[token], parentId)
                   }
                   case 'object': {
-                    const parsedVal = {}
-                    const children = val.children ?? {}
-                    for (const key in children) {
-                      parsedVal[key] = __marshalValue(children[key], token, false, val[token])
-                    }
-                    return parsedVal
+                    return __createVMProxy({}, val[token])
                   }
                   case 'cache':
                   default: {
@@ -518,11 +504,7 @@ export class Marshaller {
               }
               // regular object
               __valueCache.set(valueId, value)
-              const entries = []
-              for (let prop in value) {
-                entries.push('"'+prop+'": '+__unmarshalValue(value[prop], tkn, valueId).serialized)
-              }
-              return { serialized: '{ "type": "object", "'+tkn+'": "'+valueId+'", "children": {'+entries.join(', ')+'}}', token: tkn }
+              return { serialized: '{ "type": "object", "'+tkn+'": "'+valueId+'"}', token: tkn }
             }
             __valueCache.set(valueId, value)
             if (valueType === 'function') {

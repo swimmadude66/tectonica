@@ -200,17 +200,43 @@ export class Marshaller {
   private _createVMProxy(base: any, cacheId: string, parentId?: string) {
     return new Proxy(base, {
       get: (_target, key) => {
-        return this._getVMCacheItemKey(cacheId, key)
+        return this.__VMCache_get(cacheId, key)
       },
       set: (_target, key, newValue) => {
-        return this._setVMCacheItemKey(cacheId, key, newValue)
+        return this.__VMCache_set(cacheId, key, newValue)
       },
       apply: (_target, thisArg, argArray) => {
-        return this._callVMCacheItem(cacheId, argArray, parentId)
+        return this.__VMCache_apply(cacheId, argArray, parentId)
       },
       construct: (_target, argArray, newTarget) => {
-        console.log('constructing host class from vm', cacheId, this.valueCache.get(cacheId))
-        return this._constructVMCacheItem(cacheId, argArray)
+        return this.__VMCache_construct(cacheId, argArray)
+      },
+      defineProperty: (target, property, attributes) => {
+        return this.__VMCache_defineProperty(cacheId, property, attributes)
+      },
+      deleteProperty: (target, p) => {
+        return this.__VMCache_deleteProperty(cacheId, p)
+      },
+      getOwnPropertyDescriptor: (target, p) => {
+        return this.__VMCache_getOwnPropertyDescriptor(cacheId, p)
+      },
+      getPrototypeOf: (target) => {
+        return this.__VMCache_getPrototypeOf(cacheId)
+      },
+      has: (target, p) => {
+        return this.__VMCache_has(cacheId, p)
+      },
+      isExtensible: (target) => {
+        return this.__VMCache_isExtensible(cacheId)
+      },
+      ownKeys: (target) => {
+        return this.__VMCache_ownKeys(cacheId)
+      },
+      preventExtensions: (target) => {
+        return this.__VMCache_preventExtensions(cacheId)
+      },
+      setPrototypeOf: (target, v) => {
+        return this.__VMCache_setPrototypeOf(cacheId, v)
       },
     })
   }
@@ -230,59 +256,6 @@ export class Marshaller {
     })
   }
 
-  private _getVMCacheItemKey(cacheId: string, key: string | symbol): any {
-    const vm = this.requireVM()
-    const scope = new Scope()
-    const getter = scope.manage(vm.getProp(vm.global, '__vmCacheGetter'))
-    const cacheIdHandle = scope.manage(vm.newString(cacheId))
-    const keyHandle = scope.manage(this.marshal(key))
-    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(getter, vm.global, cacheIdHandle, keyHandle)))
-    const jsVal = this.unmarshal(returnValHandle)
-    scope.dispose()
-    return jsVal
-  }
-
-  private _setVMCacheItemKey(cacheId: string, key: string | symbol, newVal: any): any {
-    const vm = this.requireVM()
-    const scope = new Scope()
-    const setter = scope.manage(vm.getProp(vm.global, '__vmCacheSetter'))
-    const cacheIdHandle = scope.manage(vm.newString(cacheId))
-    const keyHandle = scope.manage(this.marshal(key))
-    const newValHandle = scope.manage(this.marshal(newVal))
-    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(setter, vm.global, cacheIdHandle, keyHandle, newValHandle)))
-    const jsVal = this.unmarshal(returnValHandle)
-    scope.dispose()
-    return jsVal
-  }
-
-  private _callVMCacheItem(cacheId: string, args: any[], thisId?: string): any {
-    const vm = this.requireVM()
-    const scope = new Scope()
-    const caller = scope.manage(vm.getProp(vm.global, '__vmCacheCaller'))
-    const cacheIdHandle = scope.manage(vm.newString(cacheId))
-    const argArrayHandle = scope.manage(this.marshal(args))
-    const thisIdHandle = scope.manage(this.marshal(thisId))
-    try {
-      const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(caller, vm.global, cacheIdHandle, argArrayHandle, thisIdHandle)))
-      const jsVal = this.unmarshal(returnValHandle)
-      return jsVal
-    } finally {
-      scope.dispose()
-    }
-  }
-
-  private _constructVMCacheItem(cacheId: string, args: any[], thisId?: string): any {
-    const vm = this.requireVM()
-    const scope = new Scope()
-    const constructor = scope.manage(vm.getProp(vm.global, '__vmCacheConstructor'))
-    const cacheIdHandle = scope.manage(vm.newString(cacheId))
-    const argArrayHandle = scope.manage(this.marshal(args))
-    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(constructor, vm.global, cacheIdHandle, argArrayHandle)))
-    const jsVal = this.unmarshal(returnValHandle)
-    scope.dispose()
-    return jsVal
-  }
-
   private _initHelpers(vm: QuickJSContext) {
     vm.unwrapResult(vm.evalCode(`new Map()`)).consume((cache) => vm.setProp(vm.global, '__valueCache', cache))
     vm.newFunction('__generateRandomId', () => vm.newString(generateRandomId())).consume((generator) => vm.setProp(vm.global, '__generateRandomId', generator))
@@ -295,7 +268,8 @@ export class Marshaller {
       return cachedPromise
     }`)
     ).consume((promiseGetter) => vm.setProp(vm.global, '__vmCachedPromiseGetter', promiseGetter))
-    vm.unwrapResult(vm.evalCode(`(cacheId, key) => __valueCache.get(cacheId)?.[key]`)).consume((getter) => vm.setProp(vm.global, '__vmCacheGetter', getter))
+    // VM Proxy helpers
+    vm.unwrapResult(vm.evalCode(`(cacheId, key) => __valueCache.get(cacheId)?.[key]`)).consume((proxyFunc) => vm.setProp(vm.global, '__cache_get', proxyFunc))
     vm.unwrapResult(
       vm.evalCode(`(cacheId, key, val) => {
         const cachedItem = __valueCache.get(cacheId)
@@ -306,7 +280,7 @@ export class Marshaller {
         return true
       }
     `)
-    ).consume((setter) => vm.setProp(vm.global, '__vmCacheSetter', setter))
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_set', proxyFunc))
     vm.unwrapResult(
       vm.evalCode(`
       (cacheId, argsArray, thisId) => {
@@ -318,7 +292,7 @@ export class Marshaller {
         throw new Error('Not a function')
       }
     `)
-    ).consume((caller) => vm.setProp(vm.global, '__vmCacheCaller', caller))
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_apply', proxyFunc))
     vm.unwrapResult(
       vm.evalCode(`
       (cacheId, argsArray) => {
@@ -326,7 +300,112 @@ export class Marshaller {
         return new cachedFun(...argsArray)
       }
     `)
-    ).consume((caller) => vm.setProp(vm.global, '__vmCacheConstructor', caller))
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_construct', proxyFunc))
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId, key, attr) => {
+        const cachedItem = __valueCache.get(cacheId)
+        if (!cachedItem) {
+          return false
+        }
+        try {
+          Object.defineProperty(cachedItem, key, attr)
+          return true
+        } catch (e) {
+         return false
+        }
+      }
+    `)
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_defineProperty', proxyFunc))
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId, key) => {
+        const cachedItem = __valueCache.get(cacheId)
+        if (!cachedItem) {
+          return false
+        }
+        return delete cachedItem[key]
+      }
+    `)
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_deleteProperty', proxyFunc))
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId, key) => {
+        const cachedItem = __valueCache.get(cacheId)
+        if (!cachedItem) {
+          return undefined
+        }
+        return Object.getOwnPropertyDescriptor(cachedItem, key)
+      }
+    `)
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_getOwnPropertyDescriptor', proxyFunc))
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId) => {
+        const cachedItem = __valueCache.get(cacheId)
+        if (!cachedItem) {
+          return null
+        }
+        return Object.getPrototypeOf(cachedItem)
+      }
+    `)
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_getPrototypeOf', proxyFunc))
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId, key) => {
+        const cachedItem = __valueCache.get(cacheId)
+        if (!cachedItem) {
+          return false
+        }
+        return key in cachedItem
+      }
+    `)
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_has', proxyFunc))
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId) => {
+        const cachedItem = __valueCache.get(cacheId)
+        if (!cachedItem) {
+          return false
+        }
+        return Object.isExtensible(cachedItem)
+      }
+    `)
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_isExtensible', proxyFunc))
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId) => {
+        const cachedItem = __valueCache.get(cacheId)
+        if (!cachedItem) {
+          return []
+        }
+        return Object.keys(cachedItem)
+      }
+    `)
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_ownKeys', proxyFunc))
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId) => {
+        const cachedItem = __valueCache.get(cacheId)
+        if (!cachedItem) {
+          return false
+        }
+        try {
+          Object.preventExtensions(cachedItem)
+          return true
+        } catch (e) { 
+         return false
+        }
+      }
+    `)
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_preventExtensions', proxyFunc))
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId, newProto) => {
+        const cachedItem = __valueCache.get(cacheId)
+        if (!cachedItem) {
+          return false
+        }
+        try {
+          Object.setPrototypeOf(cachedItem, newProto)
+          return true
+        } catch (e) {
+          return false 
+        }
+      }
+    `)
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_setPrototypeOf', proxyFunc))
     vm.newFunction('__getCachedPromise', (cacheIdHandle) => {
       const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
       const cachedPromise = this.valueCache.get(cacheId)
@@ -351,21 +430,23 @@ export class Marshaller {
       vmPromise.settled.then(vm.runtime.executePendingJobs)
       return vmPromise.handle
     }).consume((promiseGetter) => vm.setProp(vm.global, '__getCachedPromise', promiseGetter))
-    vm.newFunction('__getCacheItemKey', (cacheIdHandle, keyHandle) => {
+
+    // host proxy helpers
+    vm.newFunction('__proxy_get', (cacheIdHandle, keyHandle) => {
       const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
       const key = keyHandle.consume((kh) => (vm.typeof(kh) === 'symbol' ? vm.getSymbol(kh) : vm.getString(kh)))
       const cachedItem = this.valueCache.get(cacheId)
       return this.marshal(cachedItem[key], cacheId)
-    }).consume((getter) => vm.setProp(vm.global, '__getCacheItemKey', getter))
-    vm.newFunction('__setCacheItemKey', (cacheIdHandle, keyHandle, valHandle) => {
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_get', proxyFunc))
+    vm.newFunction('__proxy_set', (cacheIdHandle, keyHandle, valHandle) => {
       const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
       const key = keyHandle.consume((kh) => (vm.typeof(kh) === 'symbol' ? vm.getSymbol(kh) : vm.getString(kh)))
       const val = valHandle.consume((vh) => this.unmarshal(vh))
       const cachedItem = this.valueCache.get(cacheId)
       cachedItem[key] = val
       return vm.true
-    }).consume((setter) => vm.setProp(vm.global, '__setCacheItemKey', setter))
-    vm.newFunction('__callCacheItemFunction', (cacheIdHandle, argsArrayHandle, thisCacheIdHandle) => {
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_set', proxyFunc))
+    vm.newFunction('__proxy_apply', (cacheIdHandle, argsArrayHandle, thisCacheIdHandle) => {
       const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
       const thisId = thisCacheIdHandle.consume((idHandle) => this.unmarshal(idHandle)) // must handle undefined
       const cachedItem = this.valueCache.get(cacheId)
@@ -381,33 +462,152 @@ export class Marshaller {
         return this.marshal(cachedItem(...args))
       }
       throw new Error('not a function')
-    }).consume((caller) => vm.setProp(vm.global, '__callCacheItemFunction', caller))
-    vm.newFunction('__constructCacheItem', (cacheIdHandle, argsArrayHandle) => {
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_apply', proxyFunc))
+    vm.newFunction('__proxy_construct', (cacheIdHandle, argsArrayHandle) => {
       const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
       const cachedItem = this.valueCache.get(cacheId)
       const args = argsArrayHandle.consume((ah) => this.unmarshal(ah))
       const constructed = new cachedItem(...args)
       return this.marshal(constructed)
-    }).consume((caller) => vm.setProp(vm.global, '__constructCacheItem', caller))
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_construct', proxyFunc))
+    vm.newFunction('__proxy_defineProperty', (cacheIdHandle, keyHandle, attrHandle) => {
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const key = keyHandle.consume((kh) => (vm.typeof(kh) === 'symbol' ? vm.getSymbol(kh) : vm.getString(kh)))
+      const attr = attrHandle.consume((a) => this.unmarshal(a))
+      const cachedItem = this.valueCache.get(cacheId)
+      if (cachedItem == null) {
+        return vm.false
+      }
+      Object.defineProperty(cachedItem, key, attr)
+      return vm.true
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_defineProperty', proxyFunc))
+    vm.newFunction('__proxy_deleteProperty', (cacheIdHandle, keyHandle) => {
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const key = keyHandle.consume((kh) => (vm.typeof(kh) === 'symbol' ? vm.getSymbol(kh) : vm.getString(kh)))
+      const cachedItem = this.valueCache.get(cacheId)
+      if (cachedItem == null) {
+        return vm.false
+      }
+      return delete cachedItem[key] ? vm.true : vm.false
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_deleteProperty', proxyFunc))
+    vm.newFunction('__proxy_getOwnPropertyDescriptor', (cacheIdHandle, keyHandle) => {
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const key = keyHandle.consume((kh) => (vm.typeof(kh) === 'symbol' ? vm.getSymbol(kh) : vm.getString(kh)))
+      const cachedItem = this.valueCache.get(cacheId)
+      if (cachedItem == null) {
+        return vm.undefined
+      }
+      return this.marshal(Object.getOwnPropertyDescriptor(cachedItem, key))
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_getOwnPropertyDescriptor', proxyFunc))
+    vm.newFunction('__proxy_getPrototypeOf', (cacheIdHandle) => {
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const cachedItem = this.valueCache.get(cacheId)
+      if (cachedItem == null) {
+        return vm.null
+      }
+      return this.marshal(Object.getPrototypeOf(cachedItem))
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_getPrototypeOf', proxyFunc))
+    vm.newFunction('__proxy_has', (cacheIdHandle, keyHandle) => {
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const key = keyHandle.consume((kh) => (vm.typeof(kh) === 'symbol' ? vm.getSymbol(kh) : vm.getString(kh)))
+      const cachedItem = this.valueCache.get(cacheId)
+      if (cachedItem == null) {
+        return vm.false
+      }
+      return key in cachedItem ? vm.true : vm.false
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_has', proxyFunc))
+    vm.newFunction('__proxy_isExtensible', (cacheIdHandle) => {
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const cachedItem = this.valueCache.get(cacheId)
+      if (cachedItem == null) {
+        return vm.false
+      }
+      return Object.isExtensible(cachedItem) ? vm.true : vm.false
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_isExtensible', proxyFunc))
+    vm.newFunction('__proxy_ownKeys', (cacheIdHandle) => {
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const cachedItem = this.valueCache.get(cacheId)
+      if (cachedItem == null) {
+        return vm.newArray()
+      }
+      return this.marshal(Object.keys(cachedItem))
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_ownKeys', proxyFunc))
+    vm.newFunction('__proxy_preventExtensions', (cacheIdHandle) => {
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const cachedItem = this.valueCache.get(cacheId)
+      if (cachedItem == null) {
+        return vm.false
+      }
+      try {
+        Object.preventExtensions(cachedItem)
+        return vm.true
+      } catch (e) {
+        return vm.false
+      }
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_preventExtensions', proxyFunc))
+    vm.newFunction('__proxy_setPrototypeOf', (cacheIdHandle, newProtoHandle) => {
+      const cacheId = cacheIdHandle.consume((idHandle) => vm.getString(idHandle))
+      const newProto = newProtoHandle.consume((vh) => this.unmarshal(vh))
+      const cachedItem = this.valueCache.get(cacheId)
+      if (cachedItem == null) {
+        return vm.false
+      }
+      try {
+        Object.setPrototypeOf(cachedItem, newProto)
+        return vm.true
+      } catch (e) {
+        return vm.false
+      }
+    }).consume((proxyFunc) => vm.setProp(vm.global, '__proxy_setPrototypeOf', proxyFunc))
 
+    // create host proxy
     vm.unwrapResult(
       vm.evalCode(`(base, cacheId, parentCacheId) => {
         return new Proxy(base, {
           get: (_target, key) => {
-            return __getCacheItemKey(cacheId, key)
+            return __proxy_get(cacheId, key)
           },
           set: (_target, key, newValue) => {
-            return __setCacheItemKey(cacheId, key, newValue)
+            return __proxy_set(cacheId, key, newValue)
           },
           apply: (_target, thisArg, argArray) => {
-            return __callCacheItemFunction(cacheId, argArray, parentCacheId ?? thisArg)
+            return __proxy_apply(cacheId, argArray, parentCacheId ?? thisArg)
           },
           construct: (_target, argArray) => {
-            return __constructCacheItem(cacheId, argArray)
-          }
+            return __proxy_construct(cacheId, argArray)
+          },
+          defineProperty: (target, property, attributes) => {
+            return __proxy_defineProperty(cacheId, property, attributes)
+          },
+          deleteProperty: (target, p) => {
+            return __proxy_deleteProperty(cacheId, p)
+          },
+          getOwnPropertyDescriptor: (target, p) => {
+            return __proxy_getOwnPropertyDescriptor(cacheId, p)
+          },
+          getPrototypeOf: (target) => {
+            return __proxy_getPrototypeOf(cacheId)
+          },
+          has: (target, p) => {
+            return __proxy_has(cacheId, p)
+          },
+          isExtensible: (target) => {
+            return __proxy_isExtensible(cacheId)
+          },
+          ownKeys: (target) => {
+            return __proxy_ownKeys(cacheId)
+          },
+          preventExtensions: (target) => {
+            return __proxy_preventExtensions(cacheId)
+          },
+          setPrototypeOf: (target, v) => {
+            return __proxy_setPrototypeOf(cacheId, v)
+          },
         })
     }`)
     ).consume((proxyCreator) => vm.setProp(vm.global, '__createVMProxy', proxyCreator))
+
+    // marshal js val to vm
     vm.unwrapResult(
       vm.evalCode(`
           (valueString, token, json = true, parentCacheId) => {
@@ -470,6 +670,8 @@ export class Marshaller {
           }
         `)
     ).consume((marshal) => vm.setProp(vm.global, '__marshalValue', marshal))
+
+    // unmarshal vm val to js
     vm.unwrapResult(
       vm.evalCode(`
           (value, tkn = __generateRandomId(), parentCacheId ) => {
@@ -514,5 +716,160 @@ export class Marshaller {
           }
         `)
     ).consume((unmarshal) => vm.setProp(vm.global, '__unmarshalValue', unmarshal))
+  }
+
+  private __VMCache_get(cacheId: string, key: string | symbol): any {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const getter = scope.manage(vm.getProp(vm.global, '__cache_get'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const keyHandle = scope.manage(this.marshal(key))
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(getter, vm.global, cacheIdHandle, keyHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
+  }
+  private __VMCache_set(cacheId: string, key: string | symbol, newVal: any): any {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const setter = scope.manage(vm.getProp(vm.global, '__cache_set'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const keyHandle = scope.manage(this.marshal(key))
+    const newValHandle = scope.manage(this.marshal(newVal))
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(setter, vm.global, cacheIdHandle, keyHandle, newValHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
+  }
+  private __VMCache_apply(cacheId: string, args: any[], thisId?: string): any {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const caller = scope.manage(vm.getProp(vm.global, '__cache_apply'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const argArrayHandle = scope.manage(this.marshal(args))
+    const thisIdHandle = scope.manage(this.marshal(thisId))
+    try {
+      const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(caller, vm.global, cacheIdHandle, argArrayHandle, thisIdHandle)))
+      const jsVal = this.unmarshal(returnValHandle)
+      return jsVal
+    } finally {
+      scope.dispose()
+    }
+  }
+  private __VMCache_construct(cacheId: string, args: any[], thisId?: string): any {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const constructor = scope.manage(vm.getProp(vm.global, '__cache_construct'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const argArrayHandle = scope.manage(this.marshal(args))
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(constructor, vm.global, cacheIdHandle, argArrayHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
+  }
+  private __VMCache_defineProperty(cacheId: string, prop: string | symbol, attributes: PropertyDescriptor): boolean {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const definer = scope.manage(vm.getProp(vm.global, '__cache_defineProperty'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const propHandle = scope.manage(this.marshal(prop))
+    const attrHandle = scope.manage(this.marshal(attributes))
+
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(definer, vm.global, cacheIdHandle, propHandle, attrHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
+  }
+  private __VMCache_deleteProperty(cacheId: string, prop: string | symbol): boolean {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const deleter = scope.manage(vm.getProp(vm.global, '__cache_deleteProperty'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const propHandle = scope.manage(this.marshal(prop))
+
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(deleter, vm.global, cacheIdHandle, propHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
+  }
+  private __VMCache_getOwnPropertyDescriptor(cacheId: string, prop: string | symbol): PropertyDescriptor | undefined {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const propDescGetter = scope.manage(vm.getProp(vm.global, '__cache_getOwnPropertyDescriptor'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const propHandle = scope.manage(this.marshal(prop))
+
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(propDescGetter, vm.global, cacheIdHandle, propHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
+  }
+  private __VMCache_getPrototypeOf(cacheId: string): object | null {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const prototypeGetter = scope.manage(vm.getProp(vm.global, '__cache_getPrototypeOf'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(prototypeGetter, vm.global, cacheIdHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
+  }
+  private __VMCache_has(cacheId: string, prop: string | symbol): boolean {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const has = scope.manage(vm.getProp(vm.global, '__cache_has'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const propHandle = scope.manage(this.marshal(prop))
+
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(has, vm.global, cacheIdHandle, propHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
+  }
+  private __VMCache_isExtensible(cacheId: string): boolean {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const isExtensible = scope.manage(vm.getProp(vm.global, '__cache_isExtensible'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(isExtensible, vm.global, cacheIdHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
+  }
+  private __VMCache_ownKeys(cacheId: string): ArrayLike<string | symbol> {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const ownKeysGetter = scope.manage(vm.getProp(vm.global, '__cache_ownKeys'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(ownKeysGetter, vm.global, cacheIdHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
+  }
+  private __VMCache_preventExtensions(cacheId: string): boolean {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const extensionPreventer = scope.manage(vm.getProp(vm.global, '__cache_preventExtensions'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(extensionPreventer, vm.global, cacheIdHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
+  }
+  private __VMCache_setPrototypeOf(cacheId: string, newPrototype: object | null): boolean {
+    const vm = this.requireVM()
+    const scope = new Scope()
+    const prototypeSetter = scope.manage(vm.getProp(vm.global, '__cache_setPrototypeOf'))
+    const cacheIdHandle = scope.manage(vm.newString(cacheId))
+    const newProtoHandle = scope.manage(this.marshal(newPrototype))
+
+    const returnValHandle = scope.manage(vm.unwrapResult(vm.callFunction(prototypeSetter, vm.global, cacheIdHandle, newProtoHandle)))
+    const jsVal = this.unmarshal(returnValHandle)
+    scope.dispose()
+    return jsVal
   }
 }

@@ -269,7 +269,19 @@ export class Marshaller {
     }`)
     ).consume((promiseGetter) => vm.setProp(vm.global, '__vmCachedPromiseGetter', promiseGetter))
     // VM Proxy helpers
-    vm.unwrapResult(vm.evalCode(`(cacheId, key) => __valueCache.get(cacheId)?.[key]`)).consume((proxyFunc) => vm.setProp(vm.global, '__cache_get', proxyFunc))
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId, key) => {
+      const cachedItem = __valueCache.get(cacheId)
+      if (cachedItem == null) {
+        return undefined
+      }
+      const child = cachedItem[key]
+      if (typeof child === 'function') {
+        return (...args) => child.apply(cachedItem, args)
+      }
+      return child
+    }`)
+    ).consume((proxyFunc) => vm.setProp(vm.global, '__cache_get', proxyFunc))
     vm.unwrapResult(
       vm.evalCode(`(cacheId, key, val) => {
         const cachedItem = __valueCache.get(cacheId)

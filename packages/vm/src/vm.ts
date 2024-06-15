@@ -107,7 +107,11 @@ export class VMManager {
     const vm = this.requireVM()
     let resultHandle
     try {
-      resultHandle = vm.unwrapResult(vm.evalCode(code))
+      resultHandle = vm.unwrapResult(
+        vm.evalCode(`{
+        ${code}
+      }`)
+      )
       const result = this.marshaller.unmarshal(resultHandle)
       return result
     } finally {

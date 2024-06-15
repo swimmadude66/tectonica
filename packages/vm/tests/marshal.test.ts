@@ -66,7 +66,7 @@ describe('Marshaller service', () => {
       expect(funcSerialized).to.be.a.string
       expect(funcToken).to.be.a.string
       const funcCacheData = JSON.parse(funcSerialized)
-      expect(funcCacheData).to.have.keys(['type', funcToken])
+      expect(funcCacheData).to.have.keys(['type', funcToken, 'name'])
       expect(funcCacheData.type).to.equal('function')
       expect(funcCacheData[funcToken]).to.be.a.string
       const cachedFunc = marshaller.valueCache.get(funcCacheData[funcToken])
@@ -296,6 +296,20 @@ describe('Marshaller service', () => {
         m.valueOf()
       `)
       expect(dateCheck).to.equal(now)
+    })
+
+    it('preserves object identity', () => {
+      const marshaller = manager.marshaller
+
+      const hostObj = { x: 1, a: 'a', y: true, f: () => 6, arr: [] }
+      const vmHandle = marshaller.marshal(hostObj)
+      try {
+        const unmarshaled = marshaller.unmarshal(vmHandle)
+        expect(unmarshaled).to.equal(hostObj)
+        expect(unmarshaled).to.deep.equal(hostObj)
+      } finally {
+        vmHandle.dispose()
+      }
     })
   })
 })

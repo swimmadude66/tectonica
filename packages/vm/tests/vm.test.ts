@@ -111,5 +111,11 @@ describe('VMManager', () => {
       expect(globalResult).to.be.a.string
       expect(globalResult).to.equal('we say hello and goodbye')
     })
+
+    it('no longer errors on reused local vars', () => {
+      vm.eval(`const occ = 'used in func'`)
+      expect(() => vm.eval(`occ`)).to.throw()
+      expect(() => vm.eval(`const occ = 'used again'`)).not.to.throw()
+    })
   })
 })

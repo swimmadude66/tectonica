@@ -4,6 +4,7 @@ import { PRIMITIVE_TYPES, generateMagicToken, generateRandomId } from './utils'
 export class Marshaller {
   valueCache = new Map<string, any>()
   vmCacheIdSymbol = Symbol('vmCacheId')
+  hostCacheIdSymbol = Symbol('hostCacheId')
 
   constructor(private vm?: QuickJSContext) {
     if (vm) {
@@ -17,15 +18,15 @@ export class Marshaller {
     this.vm = isolatedVM
 
     // debug console stdlib
-    isolatedVM.newObject().consume((c) => {
-      isolatedVM
-        .newFunction('log', (...argsHandles) => {
-          const args = argsHandles.map((a) => isolatedVM.dump(a))
-          console.log(...args)
-        })
-        .consume((l) => isolatedVM.setProp(c, 'log', l))
-      isolatedVM.setProp(isolatedVM.global, 'console', c)
-    })
+    // isolatedVM.newObject().consume((c) => {
+    //   isolatedVM
+    //     .newFunction('log', (...argsHandles) => {
+    //       const args = argsHandles.map((a) => isolatedVM.dump(a))
+    //       console.log(...args)
+    //     })
+    //     .consume((l) => isolatedVM.setProp(c, 'log', l))
+    //   isolatedVM.setProp(isolatedVM.global, 'console', c)
+    // })
 
     this._initHelpers(isolatedVM)
   }
@@ -116,7 +117,7 @@ export class Marshaller {
     if (value?.[this.vmCacheIdSymbol]) {
       return { serialized: `{"type": "vmcache", "${tkn}": "${value[this.vmCacheIdSymbol]}"}`, token: tkn }
     }
-    const valueId = generateRandomId()
+    const valueId = value?.[this.hostCacheIdSymbol] ?? generateRandomId()
     if (valueType === 'object') {
       if (value === null) {
         return { serialized: `null`, token: tkn }
@@ -129,14 +130,14 @@ export class Marshaller {
         return { serialized: `[${mappedChildren.join(', ')}]`, token: tkn }
       }
       if (value instanceof Promise || 'then' in value) {
-        this.valueCache.set(valueId, value)
+        this._cacheValue(valueId, value)
         return { serialized: `{"type": "promise", "${tkn}": "${valueId}"}`, token: tkn }
       }
       // object
-      this.valueCache.set(valueId, value)
+      this._cacheValue(valueId, value)
       return { serialized: `{"type": "object", "${tkn}": "${valueId}"}`, token: tkn }
     }
-    this.valueCache.set(valueId, value)
+    this._cacheValue(valueId, value)
     if (valueType === 'function') {
       return {
         serialized: `{"type": "function", "${tkn}": "${valueId}"${parentCacheId ? `, "parentCacheId": "${parentCacheId}"` : ''}${value.name ? `, "name": "${value.name}"` : ''}}`,
@@ -212,6 +213,11 @@ export class Marshaller {
     return val
   }
 
+  private _cacheValue(cacheId: string, value: any) {
+    this.valueCache.set(cacheId, value)
+    value[this.hostCacheIdSymbol] = cacheId
+  }
+
   private _createVMProxy(base: any, cacheId: string, parentId?: string) {
     return new Proxy(base, {
       get: (_target, key) => {
@@ -227,7 +233,6 @@ export class Marshaller {
         return this.__VMCache_apply(cacheId, argArray, parentId)
       },
       construct: (_target, argArray, newTarget) => {
-        console.log('Calling constructor on base', typeof base, cacheId)
         return this.__VMCache_construct(cacheId, argArray, newTarget)
       },
       defineProperty: (target, property, attributes) => {
@@ -277,7 +282,14 @@ export class Marshaller {
 
   private _initHelpers(vm: QuickJSContext) {
     vm.unwrapResult(vm.evalCode(`Symbol('hostCacheId')`)).consume((sym) => vm.setProp(vm.global, '__hostCacheSymbol', sym))
+    vm.unwrapResult(vm.evalCode(`Symbol('vmCacheId')`)).consume((sym) => vm.setProp(vm.global, '__vmCacheSymbol', sym))
     vm.unwrapResult(vm.evalCode(`new Map()`)).consume((cache) => vm.setProp(vm.global, '__valueCache', cache))
+    vm.unwrapResult(
+      vm.evalCode(`(cacheId, value) => {
+      __valueCache.set(cacheId, value)
+      value[__vmCacheSymbol] = cacheId  
+    }`)
+    ).consume((cacheSetter) => vm.setProp(vm.global, '__cacheValue', cacheSetter))
     vm.newFunction('__generateRandomId', () => vm.newString(generateRandomId())).consume((generator) => vm.setProp(vm.global, '__generateRandomId', generator))
     vm.unwrapResult(
       vm.evalCode(`(cacheId) => {
@@ -734,7 +746,7 @@ export class Marshaller {
             if (value?.[__hostCacheSymbol]) {
               return { serialized: '{"type": "hostcache", "'+tkn+'": "'+value[__hostCacheSymbol]+'"}', token: tkn}
             }
-            const valueId = __generateRandomId()
+            const valueId = value?.[__vmCacheSymbol] ?? __generateRandomId()
             if (valueType === 'object') {
               if (value === null) {
                 return { serialized: 'null', token: tkn }
@@ -747,14 +759,14 @@ export class Marshaller {
                 return { serialized: '['+mappedChildren.join(', ')+']', token: tkn }
               }
               if (value instanceof Promise || 'then' in value) {
-                __valueCache.set(valueId, value)
+                __cacheValue(valueId, value)
                 return { serialized: '{"type": "promise", "'+tkn+'": "'+valueId+'"}', token: tkn}
               }
               // regular object
-              __valueCache.set(valueId, value)
+              __cacheValue(valueId, value)
               return { serialized: '{ "type": "object", "'+tkn+'": "'+valueId+'"}', token: tkn }
             }
-            __valueCache.set(valueId, value)
+            __cacheValue(valueId, value)
             if (valueType === 'function') {
               return { serialized: '{"type": "function", "'+tkn+'": "'+valueId+'"' + (parentCacheId ? (', "parentCacheId": "' + parentCacheId + '"') : '') + '}', token: tkn }
             }

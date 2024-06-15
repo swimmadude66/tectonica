@@ -1,6 +1,7 @@
 import { expect } from 'chai'
 import { Marshaller } from '../src/marshal'
 import { VMManager } from '../src/vm'
+import { Scope } from 'quickjs-emscripten'
 
 describe('Marshaller service', () => {
   describe('serialize JS value', () => {
@@ -309,6 +310,27 @@ describe('Marshaller service', () => {
         expect(unmarshaled).to.deep.equal(hostObj)
       } finally {
         vmHandle.dispose()
+      }
+    })
+
+    it('handles object reuse', () => {
+      const marshaller = manager.marshaller
+      const hostObj = { x: 1, a: 'a', y: true, f: () => 6, arr: [] }
+      const scope = new Scope()
+      try {
+        scope.manage(marshaller.marshal(hostObj))
+        expect(hostObj[marshaller.hostCacheIdSymbol]).to.be.a.string
+        const hostCacheID = hostObj[marshaller.hostCacheIdSymbol]
+        expect(marshaller.valueCache.get(hostCacheID)).to.deep.equal(hostObj)
+
+        // marshal the same object
+        scope.manage(marshaller.marshal(hostObj))
+        expect(hostObj[marshaller.hostCacheIdSymbol]).to.be.a.string
+        const secondHostCacheID = hostObj[marshaller.hostCacheIdSymbol]
+        expect(secondHostCacheID).to.equal(hostCacheID)
+        expect(marshaller.valueCache.get(secondHostCacheID)).to.deep.equal(hostObj)
+      } finally {
+        scope.dispose()
       }
     })
   })

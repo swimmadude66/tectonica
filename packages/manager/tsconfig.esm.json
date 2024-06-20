@@ -7,7 +7,8 @@
     "declaration": false,
     "module": "ES6",
     "moduleResolution": "Bundler",
-    "outDir": "dist/esm"
+    "outDir": "dist/esm",
+    "jsx": "react-jsx"
   },
   "include": ["src/"]
 }

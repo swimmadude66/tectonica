@@ -8,7 +8,8 @@
     "module": "CommonJS",
     "moduleResolution": "node",
     "outDir": "dist/cjs",
-    "declarationDir": "dist/types"
+    "declarationDir": "dist/types",
+    "jsx": "react-jsx"
   },
   "include": ["src/"]
 }

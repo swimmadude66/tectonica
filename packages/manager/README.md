@@ -85,8 +85,6 @@ export const useScrollPos = createGlobalValueListenerHook(ScrollManager, 'scroll
 _In some components_
 
 ```typescript
-import React from 'react'
-
 import { ScrollManagerProvider, useScrollPos } from '../managers/scrollManager'
 
 export function App() {

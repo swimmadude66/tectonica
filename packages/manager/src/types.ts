@@ -58,10 +58,6 @@ export type GetValueFunc<Manager extends AbstractManager<E>, E extends EventsDef
   data: ListenerData<Manager, E, EventName>
 ) => ValueType
 
-export type GetValueType<Manager extends AbstractManager<E>, E extends EventsDef, EventName extends ManagerEventTypeName<E>, ValueType> =
-  | GetValueFunc<Manager, E, EventName, ValueType>
-  | ValueType
-
 export type EventHandler<E extends EventsDef, EventName extends ManagerEventTypeName<E>> = (data: ManagerEventTypeData<E, EventName>) => void
 
 export type EffectListener<Manager extends AbstractManager<E>, E extends EventsDef, EventName extends ManagerEventTypeName<E>> = (data: ListenerData<Manager, E, EventName>) => void

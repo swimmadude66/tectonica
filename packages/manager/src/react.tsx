@@ -8,7 +8,6 @@ import {
   GetKeyFunc,
   GetKeyType,
   GetValueFunc,
-  GetValueType,
   GlobalKey,
   InferManagerEvents,
   ManagerConstructorHook,
@@ -99,28 +98,14 @@ export function createValueListenerHook<
   managerClass: ManagerClass,
   eventName: EventName,
   getKey: GetKeyType<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ArgsType>,
-  getValue: GetValueType<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ReturnType>,
-  getServerValue: GetValueType<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ReturnType> = getValue
+  getValue: GetValueFunc<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ReturnType>,
+  getServerValue: GetValueFunc<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ReturnType> = getValue
 ): (...args: ArgsType[]) => ReturnType {
   const keyGetter = (typeof getKey === 'function' ? getKey : (_mgr, ..._args) => getKey) as GetKeyFunc<
     InstanceType<typeof managerClass>,
     InferManagerEvents<InstanceType<typeof managerClass>>,
     EventName,
     ArgsType
-  >
-
-  const valueGetter = (typeof getValue === 'function' ? getValue : (..._args: any[]) => getValue) as GetValueFunc<
-    InstanceType<typeof managerClass>,
-    InferManagerEvents<InstanceType<typeof managerClass>>,
-    EventName,
-    ReturnType
-  >
-
-  const serverValueGetter = (typeof getServerValue === 'function' ? getServerValue : (..._args: any[]) => getServerValue) as GetValueFunc<
-    InstanceType<typeof managerClass>,
-    InferManagerEvents<InstanceType<typeof managerClass>>,
-    EventName,
-    ReturnType
   >
 
   const ManagerContext = getManagerContext(managerClass)
@@ -144,11 +129,11 @@ export function createValueListenerHook<
     )
 
     const getSnapshot = useCallback(() => {
-      return valueGetter({ manager, eventName, key, data: undefined })
+      return getValue({ manager, eventName, key, data: undefined })
     }, [manager, key])
 
     const getServerSnapshot = useCallback(() => {
-      return serverValueGetter({ manager, eventName, key, data: undefined })
+      return getServerValue({ manager, eventName, key, data: undefined })
     }, [manager, key])
 
     const value = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
@@ -200,8 +185,8 @@ export function createGlobalValueListenerHook<
 >(
   managerClass: ManagerClass,
   eventName: EventName,
-  getValue: GetValueType<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ReturnType>,
-  getServerValue?: GetValueType<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ReturnType>
+  getValue: GetValueFunc<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ReturnType>,
+  getServerValue?: GetValueFunc<InstanceType<typeof managerClass>, InferManagerEvents<InstanceType<typeof managerClass>>, EventName, ReturnType>
 ): () => ReturnType {
   return createValueListenerHook<ManagerClass, EventName, never, ReturnType>(managerClass, eventName, GlobalKey, getValue, getServerValue)
 }

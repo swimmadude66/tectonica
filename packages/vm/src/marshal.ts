@@ -6,6 +6,8 @@ export class Marshaller {
   vmCacheIdSymbol = Symbol('vmCacheId')
   hostCacheIdSymbol = Symbol('hostCacheId')
 
+  private cacheIdMap = new WeakMap()
+
   constructor(private vm?: QuickJSContext) {
     if (vm) {
       // init
@@ -100,7 +102,6 @@ export class Marshaller {
 
   serializeJSValue(value: any, magicToken?: string, parentCacheId?: string): { serialized: string; token: string } {
     const tkn = magicToken ?? generateMagicToken()
-
     const valueType = typeof value
     if (PRIMITIVE_TYPES.includes(valueType)) {
       return { serialized: JSON.stringify(value), token: tkn }
@@ -117,7 +118,7 @@ export class Marshaller {
     if (value?.[this.vmCacheIdSymbol]) {
       return { serialized: `{"type": "vmcache", "${tkn}": "${value[this.vmCacheIdSymbol]}"}`, token: tkn }
     }
-    const valueId = value?.[this.hostCacheIdSymbol] ?? generateRandomId()
+    const valueId = this.getCacheId(value) ?? generateRandomId()
     if (valueType === 'object') {
       if (value === null) {
         return { serialized: `null`, token: tkn }
@@ -215,7 +216,21 @@ export class Marshaller {
 
   private _cacheValue(cacheId: string, value: any) {
     this.valueCache.set(cacheId, value)
-    value[this.hostCacheIdSymbol] = cacheId
+    try {
+      value[this.hostCacheIdSymbol] = cacheId
+    } catch (e) {
+      // not extensible, store in big ref
+      try {
+        this.cacheIdMap.set(value, cacheId)
+      } catch (e2) {
+        return
+      }
+    }
+  }
+
+  private getCacheId(value: any): string | undefined {
+    const cacheId = value[this.hostCacheIdSymbol] ?? this.cacheIdMap.get(value)
+    return cacheId
   }
 
   private _createVMProxy(base: any, cacheId: string, parentId?: string) {

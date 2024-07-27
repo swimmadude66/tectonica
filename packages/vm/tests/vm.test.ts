@@ -1,3 +1,4 @@
+import 'jsdom-global/register'
 import { expect } from 'chai'
 import { VMManager } from '../src/vm'
 
@@ -116,6 +117,24 @@ describe('VMManager', () => {
       vm.eval(`const occ = 'used in func'`)
       expect(() => vm.eval(`occ`)).to.throw()
       expect(() => vm.eval(`const occ = 'used again'`)).not.to.throw()
+    })
+  })
+
+  describe('VM DOM Eval', () => {
+    const vm: VMManager = new VMManager()
+    beforeEach(async () => {
+      await vm.init()
+    })
+
+    afterEach(() => {
+      vm.teardown()
+    })
+
+    it('handles serializing dom elements', () => {
+      const context = { __container: document.createElement('div') }
+      const domProxy = vm.scopedEval(`__container`, context)
+      expect(domProxy).not.to.be.null
+      expect(typeof domProxy).to.equal('object')
     })
   })
 })

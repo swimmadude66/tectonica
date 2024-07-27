@@ -1,6 +1,6 @@
 {
   "name": "@tectonica/vm",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "module": "dist/esm/index.js",
   "types": "dist/types/index.d.ts",
   "exports": {
@@ -16,12 +16,15 @@
   ],
   "scripts": {
     "prebuild": "rimraf dist",
-    "build:lib": "tsup",
+    "build:lib": "tsup --minify",
     "build:types": "tsc -p tsconfig.cjs.json --emitDeclarationOnly --outDir dist/types",
+    "build": "concurrently \"npm:build:*\"",
     "dev:lib": "tsup --watch",
     "dev:types": "tsc -p tsconfig.cjs.json --emitDeclarationOnly --outDir dist/types --watch",
-    "build": "concurrently \"npm:build:*\"",
     "dev": "concurrently \"npm:dev:*\"",
+    "debug:lib": "tsup --sourcemap",
+    "debug:types": "tsc -p tsconfig.cjs.json --emitDeclarationOnly --outDir dist/types",
+    "debug": "concurrently \"npm:debug:*\"",
     "lint": "eslint src",
     "test": "mocha -r tsx tests/**/*.test.ts",
     "publish-package": "pnpm publish --access public"

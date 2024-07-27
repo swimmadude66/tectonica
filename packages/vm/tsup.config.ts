@@ -7,9 +7,10 @@ const CJS_OUT = join(DIST, 'cjs')
 
 export default defineConfig((options) => [
   {
-    watch: options.watch,
+    watch: options.watch ?? false,
+    minify: options.minify ?? false,
+    sourcemap: options.sourcemap ?? false,
     cjsInterop: true,
-    minify: true,
     replaceNodeEnv: true,
     dts: false,
     clean: true,
@@ -21,9 +22,10 @@ export default defineConfig((options) => [
     outExtension: () => ({ js: '.js' }),
   },
   {
-    watch: options.watch,
+    watch: options.watch ?? false,
+    minify: options.minify ?? false,
+    sourcemap: options.sourcemap ?? false,
     cjsInterop: true,
-    minify: true,
     replaceNodeEnv: true,
     dts: false,
     clean: true,

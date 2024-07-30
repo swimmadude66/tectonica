@@ -13,6 +13,7 @@ import {
   type QuickJSAsyncVariant,
   type QuickJSSyncVariant,
   Scope,
+  QuickJSHandle,
 } from 'quickjs-emscripten'
 import { ModuleOptions, VMInitOpts } from './types'
 import { Marshaller } from './marshal'
@@ -30,6 +31,8 @@ export class VMManager {
     promise: Promise<true>
     resolve: () => void
   }
+
+  private vmContextMapKey: string = generateMagicToken({ prefix: '__context_map_', suffix: '_key' })
 
   constructor() {}
 
@@ -127,20 +130,21 @@ export class VMManager {
   scopedEval(code: string, contextVars: Record<string, any>) {
     const vm = this.requireVM()
     const scope = new Scope()
-    const scopeArgName = generateMagicToken({ prefix: '__context_args' })
-    const scopedFunc = scope.manage(
-      vm.unwrapResult(
-        vm.evalCode(`(${scopeArgName} = {}) => {
-          {
-            const { ${Object.keys(contextVars).join(', ')} } = ${scopeArgName}
-            return (${code})
-          }
-        }`)
-      )
-    )
-    const contextHandle = scope.manage(this.marshaller.marshal(contextVars))
+    const contextId = generateMagicToken({ prefix: '__scoped_context_' })
     try {
-      const resultHandle = scope.manage(vm.unwrapResult(vm.callFunction(scopedFunc, vm.global, contextHandle)))
+      const contextHandle = scope.manage(this.marshaller.marshal(contextVars))
+      const contextMapHandle = scope.manage(this.getOrCreateContextMap(vm))
+      vm.setProp(contextMapHandle, contextId, contextHandle)
+      const resultHandle = scope.manage(
+        vm.unwrapResult(
+          vm.evalCode(`
+          {
+            const { ${Object.keys(contextVars).join(', ')} } = globalThis[Symbol.for('${this.vmContextMapKey}')]['${contextId}']
+            ${code}
+          }`)
+        )
+      )
+      vm.setProp(contextMapHandle, contextId, vm.undefined)
       return this.marshaller.unmarshal(resultHandle)
     } finally {
       scope.dispose()
@@ -167,5 +171,24 @@ export class VMManager {
       variant = newVariant(variant, variantOptions) as QuickJSVariant
     }
     return variant
+  }
+
+  private getOrCreateContextMap(vm: QuickJSContext): QuickJSHandle {
+    const contextMapHandle = vm.unwrapResult(
+      vm.evalCode(`
+      {
+        (() => {
+          const cacheSymbol = Symbol.for('${this.vmContextMapKey}')
+          let cacheMap = globalThis[cacheSymbol]
+          if (!cacheMap) {
+            cacheMap = {}
+            Object.defineProperty(globalThis, cacheSymbol, { value: cacheMap, enumerable: false, configurable: false, writable: false})
+          }
+          return cacheMap 
+        })()
+      }
+    `)
+    )
+    return contextMapHandle
   }
 }

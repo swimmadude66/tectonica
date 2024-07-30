@@ -136,5 +136,27 @@ describe('VMManager', () => {
       expect(domProxy).not.to.be.null
       expect(typeof domProxy).to.equal('object')
     })
+
+    it('handles scoped dom proxying', () => {
+      const btn = document.createElement('button')
+      const context = { btn, counter: { val: 0 } }
+      const btnProxy = vm.scopedEval(
+        `
+        function run() {
+          const b = btn
+          b.addEventListener('click', () => ++counter.val)
+          return b
+        }
+        run()
+        `,
+        context
+      )
+      expect(btnProxy).not.to.be.null
+      expect(typeof btnProxy).to.equal('object')
+      btn.click()
+      expect(context.counter.val).to.equal(1)
+      btnProxy.click()
+      expect(context.counter.val).to.equal(2)
+    })
   })
 })

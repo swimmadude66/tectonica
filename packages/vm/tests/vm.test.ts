@@ -118,6 +118,36 @@ describe('VMManager', () => {
       expect(() => vm.eval(`occ`)).to.throw()
       expect(() => vm.eval(`const occ = 'used again'`)).not.to.throw()
     })
+
+    it('can reuse a jsland function', () => {
+      function getObjectTypes(props: Record<string, any>) {
+        const propTypes = {}
+        for (const key in props) {
+          propTypes[key] = typeof props[key]
+        }
+        return propTypes
+      }
+
+      const scopedFirstResult = vm.scopedEval(`getObjectTypes({ a: 1, b: '2', c: true, d: null, e: undefined })`, { getObjectTypes })
+      expect(Object.keys(scopedFirstResult)).to.deep.equal(['a', 'b', 'c', 'd', 'e'])
+      const scopedSecondResult = vm.scopedEval(`getObjectTypes({ f: 1, g: '2', h: true, i: null, j: undefined })`, { getObjectTypes })
+      expect(Object.keys(scopedSecondResult)).to.deep.equal(['f', 'g', 'h', 'i', 'j'])
+    })
+
+    it('can reuse a scoped jsland function', () => {
+      function getObjectTypes(props: Record<string, any>) {
+        const propTypes = {}
+        for (const key in props) {
+          propTypes[key] = typeof props[key]
+        }
+        return propTypes
+      }
+      vm.registerVMGlobal('getObjectTypes', getObjectTypes)
+      const firstResult = vm.eval(`getObjectTypes({ a: 1, b: '2', c: true, d: null, e: undefined })`)
+      expect(Object.keys(firstResult)).to.deep.equal(['a', 'b', 'c', 'd', 'e'])
+      const secondResult = vm.eval(`getObjectTypes({ f: 1, g: '2', h: true, i: null, j: undefined })`)
+      expect(Object.keys(secondResult)).to.deep.equal(['f', 'g', 'h', 'i', 'j'])
+    })
   })
 
   describe('VM DOM Eval', () => {
